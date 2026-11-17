@@ -3,7 +3,7 @@
 Multi-branch inventory, POS invoicing, credit ledger and automated customer messaging for a gadget retailer.
 Project rules live in [`CLAUDE.md`](./CLAUDE.md); visual rules in [`DESIGN.md`](./DESIGN.md).
 
-> Status: build steps 1–8 of 13 done (database + seed; auth, RBAC, shell; inventory + stock intake; transfers + waybill; POS checkout with installments; invoice PDF, thermal receipt, warranty certificate + public check page; WhatsApp/SMS messaging with fallback, delivery webhooks and post-checkout receipts; receivables with payment confirmations, waivers and reversals; payables with supplier payouts; customer and supplier profiles). Full setup docs land in step 13.
+> Status: build steps 1–9 of 13 done (database + seed; auth, RBAC, shell; inventory + stock intake; transfers + waybill; POS checkout with installments; invoice PDF, thermal receipt, warranty certificate + public check page; WhatsApp/SMS messaging with fallback, delivery webhooks and post-checkout receipts; receivables with payment confirmations, waivers and reversals; payables with supplier payouts; customer and supplier profiles; scheduled reminders, escalations, stock alerts and message retries). Full setup docs land in step 13.
 
 ## Local setup
 
@@ -79,3 +79,22 @@ receipts and warranty cards one extra, final variable carries the document URL.
 | WhatsApp Cloud | `{APP_URL}/api/webhooks/whatsapp` (subscribe to `messages`) | `WHATSAPP_CLOUD_WEBHOOK_VERIFY_TOKEN` handshake + `WHATSAPP_CLOUD_APP_SECRET` signature |
 | Twilio | sent automatically as each message's StatusCallback | `X-Twilio-Signature` with `TWILIO_AUTH_TOKEN` |
 | Termii | `{APP_URL}/api/webhooks/termii?token={TERMII_WEBHOOK_TOKEN}` | URL token |
+
+## Scheduled jobs
+
+| Job | Route | Lagos time | Does |
+|---|---|---|---|
+| Stock alerts | `/api/cron/stock-alerts` | daily 07:00 | Opens, refreshes and resolves low-stock and 60-day aging alerts |
+| Instalment reminders | `/api/cron/installment-reminders` | daily 08:00 | "Due in 3 days" (caught up to the day before) and "due today" |
+| Overdue escalation | `/api/cron/overdue-escalation` | daily 09:00 | Marks past-due instalments overdue, then sends the 1, 7 and 14-day messages |
+| Retry messages | `/api/cron/retry-notifications` | every 15 min | Retries failed and stuck messages up to `notifications.maxAttempts` (max 1 day old) |
+
+Every route rejects requests without `Authorization: Bearer $CRON_SECRET`. Each reminder is keyed
+`{template}:{instalment}:{offset}`, so a job that runs twice, or catches up after a missed day, sends
+it once. Plans with reminders switched off in Receivables are skipped.
+
+- **Locally:** keep `pnpm dev` running, then `pnpm cron:local` to run the jobs on schedule, or
+  `pnpm cron:local --run all` (or one job name, e.g. `--run stock-alerts`) to run them once now.
+- **Vercel:** `vercel.json` registers the jobs in UTC (Lagos is UTC+1 all year). Set `CRON_SECRET` in
+  the project's environment variables; Vercel sends it as the bearer token. The Hobby plan only
+  allows daily cron jobs, so the 15-minute retry needs a Pro plan (or another scheduler calling it).
