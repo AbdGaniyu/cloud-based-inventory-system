@@ -7,7 +7,7 @@ import type { CountryCode } from "libphonenumber-js";
  */
 export const STORE = {
   name: "LeePlugsHub",
-  /** Head-office contact printed on invoices, receipts and warranty documents. */
+  /** Head office: the Ikeja main store. Printed on invoices, receipts and warranty documents. */
   contact: {
     phone: "+2349058706999",
     email: "info@leeplugshub.com",
