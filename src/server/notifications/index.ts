@@ -8,6 +8,7 @@ import { db } from "@/server/db";
 import { type Providers, resolveProviders } from "@/server/notifications/providers";
 import { type OutgoingMessage, ProviderError, type DeliveryUpdate } from "@/server/notifications/providers/types";
 import { renderTemplate, type TemplateKey, type TemplateVariables, variablesInOrder } from "@/server/notifications/templates";
+import { reportError } from "@/server/ops/errors";
 import { getSetting } from "@/server/services/settings.service";
 
 /**
@@ -199,7 +200,7 @@ export async function deliverMessages(ids: string[], options: NotifyOptions = {}
     try {
       await deliverMessage(id, options);
     } catch (error) {
-      console.error(`Notification ${id} could not be delivered`, error);
+      await reportError(error, { source: "message", route: `notification:${id}` });
     }
   }
 }

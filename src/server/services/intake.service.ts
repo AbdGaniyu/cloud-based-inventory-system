@@ -11,7 +11,7 @@ import { stripCostFields, type Visible } from "@/server/auth/field-access";
 import { assertCan, can, type Ctx } from "@/server/auth/permissions";
 import { resolveWriteBranchId } from "@/server/branch-context";
 import { db } from "@/server/db";
-import { ForbiddenError, NotFoundError, ValidationError } from "@/server/errors";
+import { ForbiddenError, NotFoundError, requireRecordId, ValidationError } from "@/server/errors";
 import { writeAudit } from "@/server/services/audit.service";
 
 const TX_OPTIONS = { timeout: 20_000, maxWait: 5_000 };
@@ -326,6 +326,7 @@ export type IntakeSummary = Visible<
 
 /** Intake confirmation / label data. Cost and payment totals are owner-only. */
 export async function getIntake(ctx: Ctx, id: string): Promise<IntakeSummary> {
+  requireRecordId(id, "That intake no longer exists.");
   assertCan(ctx, "intake.create");
   const po = await db.purchaseOrder.findUnique({
     where: { id },

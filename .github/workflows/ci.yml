@@ -1,0 +1,88 @@
+# Every push and pull request runs the same gate a change must pass locally (CLAUDE.md §14):
+# lint, typecheck, unit + integration tests, a production build and the Playwright checkout smoke test.
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Throwaway values for CI only; real secrets live in the host's environment settings.
+  DATABASE_URL: postgresql://gadgethub:gadgethub@localhost:5432/gadgethub?schema=public
+  AUTH_SECRET: ci-auth-secret-not-for-production-0000000000
+  CRON_SECRET: ci-cron-secret-not-for-production-000000000
+  DOCUMENT_SIGNING_SECRET: ci-signing-secret-not-for-production-00000
+  APP_URL: http://localhost:3000
+  WHATSAPP_PROVIDER: console
+  SMS_PROVIDER: console
+  TZ: UTC
+
+jobs:
+  check:
+    name: Lint, typecheck, test, build, smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: gadgethub
+          POSTGRES_PASSWORD: gadgethub
+          POSTGRES_DB: gadgethub
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U gadgethub -d gadgethub"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4 # version comes from package.json "packageManager"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level=high
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Migrate
+        run: pnpm prisma migrate deploy
+
+      - name: Unit and integration tests
+        run: pnpm test
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Checkout smoke test (builds and serves the app on :3100)
+        run: pnpm test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

@@ -1085,3 +1085,45 @@ model AuthThrottle {
 
   @@map("auth_throttles")
 }
+
+// ─── Operations ──────────────────────────────────────────────────────────────
+
+/// One execution of a scheduled job (/api/cron/*): when it ran, whether it worked, what it did.
+model JobRun {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  job        String
+  startedAt  DateTime  @map("started_at") @db.Timestamptz(3)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(3)
+  /// Null while running (or if the process died mid-run).
+  ok         Boolean?
+  summary    Json?
+  error      String?
+
+  @@index([job, startedAt])
+  @@map("job_runs")
+}
+
+/// An unexpected server error (never a validation or permission refusal). Holds no cookies, headers
+/// or query strings. Pruned after 30 days.
+model ErrorEvent {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  /// render | route | action | proxy | job | message
+  source    String
+  route     String?
+  message   String
+  digest    String?
+  stack     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([createdAt])
+  @@map("error_events")
+}
+
+/// Last time each kind of operations alert went out, so a failing job alerts once an hour, not every run.
+model OpsAlert {
+  kind       String   @id
+  lastSentAt DateTime @map("last_sent_at") @db.Timestamptz(3)
+  suppressed Int      @default(0)
+
+  @@map("ops_alerts")
+}

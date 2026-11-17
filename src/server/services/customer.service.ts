@@ -9,7 +9,7 @@ import type { QuickCustomerInput } from "@/lib/validators/customer";
 import type { CustomerPreferencesInput } from "@/lib/validators/payment";
 import { assertCan, type Ctx } from "@/server/auth/permissions";
 import { db } from "@/server/db";
-import { NotFoundError, ValidationError } from "@/server/errors";
+import { NotFoundError, requireRecordId, ValidationError } from "@/server/errors";
 import { writeAudit } from "@/server/services/audit.service";
 
 export type CustomerOption = { id: string; name: string; phoneE164: string; whatsappOptIn: boolean; smsOptIn: boolean };
@@ -174,6 +174,7 @@ export type CustomerProfile = {
 const PROFILE_LIMIT = 50;
 
 export async function getCustomerProfile(ctx: Ctx, id: string, now: Date = new Date()): Promise<CustomerProfile> {
+  requireRecordId(id, "That customer no longer exists.");
   assertCan(ctx, "customer.view");
   const today = todayInStoreTz(now);
   const customer = await db.customer.findUnique({

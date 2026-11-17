@@ -11,7 +11,7 @@ import type {
 import { assertCan, can, type Ctx } from "@/server/auth/permissions";
 import { resolveWriteBranchId } from "@/server/branch-context";
 import { db } from "@/server/db";
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/server/errors";
+import { ConflictError, ForbiddenError, NotFoundError, requireRecordId, ValidationError } from "@/server/errors";
 import { writeAudit } from "@/server/services/audit.service";
 import { PAGE_SIZE } from "@/server/services/inventory.service";
 
@@ -36,6 +36,7 @@ function wrongState(status: TransferStatus, wanted: string): ValidationError {
 }
 
 async function loadTransfer(id: string) {
+  requireRecordId(id, "That transfer no longer exists.");
   const transfer = await db.stockTransfer.findUnique({
     where: { id },
     include: { items: true },
@@ -426,6 +427,7 @@ const BRANCH_SELECT = { id: true, code: true, name: true, address: true, phone: 
 
 export async function getTransfer(ctx: Ctx, id: string): Promise<TransferDetail> {
   assertCan(ctx, "transfer.view");
+  requireRecordId(id, "That transfer no longer exists.");
   const t = await db.stockTransfer.findUnique({
     where: { id },
     include: {

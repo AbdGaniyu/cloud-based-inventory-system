@@ -5,6 +5,7 @@ import { z } from "zod";
 import { BranchesSection } from "@/app/(app)/settings/sections/branches-section";
 import { BusinessForm } from "@/app/(app)/settings/sections/business-form";
 import { MessagingSection } from "@/app/(app)/settings/sections/messaging-section";
+import { SystemSection } from "@/app/(app)/settings/sections/system-section";
 import { TemplateEditor } from "@/app/(app)/settings/sections/template-editor";
 import { UsersSection } from "@/app/(app)/settings/sections/users-section";
 import { FilterChips } from "@/components/filter-chips";
@@ -13,6 +14,7 @@ import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { requirePageAccess } from "@/server/auth/session";
 import { getBusinessSettings, listAdminBranches, listAdminUsers } from "@/server/services/admin.service";
 import { getMessagingSetup, listTemplates } from "@/server/services/messaging-settings.service";
+import { getSystemStatus } from "@/server/services/system.service";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -22,11 +24,12 @@ const SECTIONS = [
   { value: "users", label: "Users and roles" },
   { value: "templates", label: "Message templates" },
   { value: "messaging", label: "Messaging providers" },
+  { value: "system", label: "System" },
 ] as const;
 type Section = (typeof SECTIONS)[number]["value"];
 
 const paramsSchema = z.object({
-  section: z.enum(["business", "branches", "users", "templates", "messaging"]).catch("business"),
+  section: z.enum(["business", "branches", "users", "templates", "messaging", "system"]).catch("business"),
   template: z.string().max(60).optional().catch(undefined),
 });
 
@@ -52,7 +55,8 @@ async function Content({ searchParams }: { searchParams: PageProps<"/settings">[
     const [users, branches] = await Promise.all([listAdminUsers(ctx), listAdminBranches(ctx)]);
     body = <UsersSection users={users} branches={branches} currentUserId={ctx.userId} />;
   } else if (section === "templates") body = <TemplateEditor templates={await listTemplates(ctx)} selectedKey={params.template ?? "receipt"} />;
-  else body = <MessagingSection setup={await getMessagingSetup(ctx)} />;
+  else if (section === "messaging") body = <MessagingSection setup={await getMessagingSetup(ctx)} />;
+  else body = <SystemSection status={await getSystemStatus(ctx)} />;
 
   return (
     <PageBody className="flex flex-col gap-6">

@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, BellRing, Boxes, CalendarClock, MessageSquareWarning, PackageMinus, Receipt } from "lucide-react";
+import { ArrowDown, ArrowUp, BellRing, Boxes, CalendarClock, MessageSquareWarning, PackageMinus, Receipt, ServerCrash } from "lucide-react";
 import Link from "next/link";
 
 import { Money } from "@/components/money";
@@ -140,8 +140,8 @@ export function DueThisWeek({ rows, total }: { rows: Dashboard["dueThisWeek"]; t
   );
 }
 
-const ALERT_ICON: Record<DashboardAlert["kind"], typeof Boxes> = { LOW_STOCK: PackageMinus, AGING: Boxes, OVERDUE_BILL: Receipt, FAILED_MESSAGE: MessageSquareWarning };
-const ALERT_TONE: Record<DashboardAlert["kind"], string> = { LOW_STOCK: "text-warning", AGING: "text-warning", OVERDUE_BILL: "text-danger", FAILED_MESSAGE: "text-danger" };
+const ALERT_ICON: Record<DashboardAlert["kind"], typeof Boxes> = { LOW_STOCK: PackageMinus, AGING: Boxes, OVERDUE_BILL: Receipt, FAILED_MESSAGE: MessageSquareWarning, SYSTEM: ServerCrash };
+const ALERT_TONE: Record<DashboardAlert["kind"], string> = { LOW_STOCK: "text-warning", AGING: "text-warning", OVERDUE_BILL: "text-danger", FAILED_MESSAGE: "text-danger", SYSTEM: "text-danger" };
 
 export function AlertsPanel({ alerts, count }: { alerts: DashboardAlert[]; count: number }) {
   return (

@@ -74,6 +74,8 @@ open accounts to another store, cancels its live transfers and keeps its history
 | `DOCUMENT_SIGNING_SECRET` | yes | Signs the expiring PDF links sent to customers |
 | `SETTINGS_ENCRYPTION_KEY` | no | Encrypts provider keys saved in Settings (32 bytes, base64); derived from `AUTH_SECRET` when empty. Changing it makes saved keys unreadable |
 | `SEED_PASSWORD` | no | Password for seeded users (default `GadgetHub!2026`) |
+| `ALERT_WEBHOOK_URL`, `ALERT_PHONE` | no | Where operations alerts go (Slack/Discord webhook, SMS); see **Monitoring** |
+| `CLIENT_IP_HEADER`, `TRUSTED_PROXY_COUNT` | no | Where the sign-in rate limiter reads the client IP; nothing needed on Vercel |
 | `TEST_DATABASE_URL` / `E2E_DATABASE_URL` | no | Override the `_test` / `_e2e` databases used by the test suites |
 | `WHATSAPP_PROVIDER`, `SMS_PROVIDER` | no | `whatsapp-cloud` \| `twilio` \| `console` and `termii` \| `twilio` \| `console` (Settings overrides) |
 | `WHATSAPP_CLOUD_*`, `TWILIO_*`, `TERMII_*` | per provider | Provider credentials; see `.env.example` (Settings → Messaging can store them instead) |
@@ -211,6 +213,35 @@ it once. Plans with reminders switched off in Receivables are skipped.
 - **Vercel:** `vercel.json` registers the jobs in UTC (Lagos is UTC+1 all year). Set `CRON_SECRET` in
   the project's environment variables; Vercel sends it as the bearer token. The Hobby plan only
   allows daily cron jobs, so the 15-minute retry needs a Pro plan (or another scheduler calling it).
+
+## Monitoring
+
+- **Every job run is recorded** (start, finish, result or error). A failure alerts straight away; a job
+  whose last success is too old (26 h for the daily jobs, 45 min for retries) alerts as "not running on
+  schedule"; a job that has never run alerts once scheduling has been live longer than its window.
+- **Unexpected server errors** (page renders, route handlers, server actions, message delivery) are
+  logged as one JSON line, stored for 30 days without cookies, headers or query strings, and alerted.
+  Validation and permission refusals are not errors and are not recorded.
+- **Alerts** go to `ALERT_WEBHOOK_URL` and/or `ALERT_PHONE`, at most once an hour per kind, with a
+  count of what was held back. Five or more failed customer messages in an hour also alert. The checks
+  run with the 15-minute retry job.
+- **Settings → System** (owner) shows job status, recent errors, the alert channels and a "Send test
+  alert" button; the owner's dashboard Alerts list includes late or failing jobs and recent errors.
+- **`/api/health`** (no sign-in) answers 200 with `"status": "ok"` or `"degraded"` while the database
+  answers, and 503 when it does not. Point an uptime monitor (UptimeRobot, Better Stack…) at it so you
+  hear about a full outage, which the app cannot report about itself.
+
+On the Vercel Hobby plan the 15-minute job cannot run, so these checks would not run either and health
+would show "degraded": use a Pro plan, or have the uptime monitor (or another scheduler) call
+`/api/cron/retry-notifications` every 15 minutes with the bearer token.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main`/`develop` and every pull request: install from
+the lockfile, `pnpm audit --prod`, lint, typecheck, migrations against a fresh Postgres, the full Vitest
+suite, then the Playwright checkout smoke test against a production build (its report is uploaded when
+it fails). Dependabot (`.github/dependabot.yml`) opens weekly update PRs for npm packages and Actions,
+which the same checks gate. Protect `main` in GitHub so a red check blocks the merge.
 
 ## Project layout
 

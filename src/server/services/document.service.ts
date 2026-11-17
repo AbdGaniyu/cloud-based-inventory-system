@@ -15,7 +15,7 @@ import type {
 import { type CalendarDate, fromDbDate, todayInStoreTz } from "@/lib/dates";
 import { assertCan, type Ctx } from "@/server/auth/permissions";
 import { db } from "@/server/db";
-import { ForbiddenError, NotFoundError } from "@/server/errors";
+import { ForbiddenError, NotFoundError, requireRecordId } from "@/server/errors";
 import { getSetting } from "@/server/services/settings.service";
 
 /**
@@ -89,6 +89,7 @@ const DEFAULT_PAYMENT_INSTRUCTIONS = "Pay at any branch or by bank transfer, quo
 
 /** Loads an invoice for documents without a user context (signed links). Callers must authorise first. */
 export async function loadInvoiceDocument(id: string, today: CalendarDate = todayInStoreTz()): Promise<InvoiceDocument> {
+  requireRecordId(id, "That invoice no longer exists.");
   const [invoice, paymentInstructions] = await Promise.all([
     db.invoice.findUnique({
       where: { id },
@@ -248,6 +249,7 @@ async function loadWarranty(where: { id: string } | { publicId: string }, today:
 
 /** Warranty certificate for signed links (no user). Callers must authorise first. */
 export async function loadWarrantyDocument(id: string, today: CalendarDate = todayInStoreTz()): Promise<WarrantyDocument> {
+  requireRecordId(id, "That warranty card no longer exists.");
   return loadWarranty({ id }, today);
 }
 

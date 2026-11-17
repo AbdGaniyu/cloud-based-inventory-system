@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { PrintButton } from "@/app/(print)/print/intake/[id]/labels/print-button";
 import { formatMoney } from "@/lib/money";
 import { requirePageAccess } from "@/server/auth/session";
 import { code128Svg } from "@/server/barcode";
+import { NotFoundError } from "@/server/errors";
 import { getIntake } from "@/server/services/intake.service";
 
 export const metadata: Metadata = { title: "Barcode labels" };
@@ -32,7 +34,10 @@ async function Labels({
 }) {
   const ctx = await requirePageAccess("intake.create");
   const [{ id }, query] = await Promise.all([params, searchParams]);
-  const summary = await getIntake(ctx, id);
+  const summary = await getIntake(ctx, id).catch((error: unknown) => {
+    if (error instanceof NotFoundError) notFound();
+    throw error;
+  });
   const perLine = query.per === "line";
 
   const labels: Label[] = [];

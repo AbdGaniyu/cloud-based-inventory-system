@@ -1,6 +1,8 @@
 import "server-only";
 
 import { verifyToken } from "@/server/notifications/providers/types";
+import { type JobName, runTrackedJob } from "@/server/ops/jobs";
+import { logEvent } from "@/server/ops/log";
 
 /**
  * Cron routes accept only `Authorization: Bearer $CRON_SECRET` (CLAUDE.md §9). Vercel Cron sends
@@ -13,19 +15,18 @@ export function isAuthorizedCron(request: Request): boolean {
   return header?.startsWith("Bearer ") === true && verifyToken(header.slice("Bearer ".length), secret);
 }
 
-export async function runCronJob<T extends object>(request: Request, name: string, job: () => Promise<T>): Promise<Response> {
+/** Authorises, runs the job as a tracked JobRun (failures are recorded and alerted) and answers with its summary. */
+export async function runCronJob<T extends object>(request: Request, name: JobName, job: () => Promise<T>): Promise<Response> {
   if (!isAuthorizedCron(request)) {
-    if (!process.env.CRON_SECRET) console.error(`Cron ${name} refused: CRON_SECRET is not set`);
+    if (!process.env.CRON_SECRET) logEvent("error", "cron refused: CRON_SECRET is not set", { job: name });
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
   const startedAt = new Date();
   try {
-    const result = await job();
-    const body = { job: name, startedAt: startedAt.toISOString(), durationMs: Date.now() - startedAt.getTime(), ...result };
-    console.info(`[cron] ${name}`, JSON.stringify(result));
-    return Response.json(body);
-  } catch (error) {
-    console.error(`[cron] ${name} failed`, error);
-    return Response.json({ job: name, error: "Job failed; see server logs" }, { status: 500 });
+    const result = await runTrackedJob(name, job);
+    logEvent("info", "cron job finished", { job: name, durationMs: Date.now() - startedAt.getTime(), result });
+    return Response.json({ job: name, startedAt: startedAt.toISOString(), durationMs: Date.now() - startedAt.getTime(), ...result });
+  } catch {
+    return Response.json({ job: name, error: "Job failed; see the System page or server logs" }, { status: 500 });
   }
 }

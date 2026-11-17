@@ -31,6 +31,7 @@ import {
   updateUser,
 } from "@/server/services/admin.service";
 import { clearProviderSecret, saveProviderSecret, sendTestMessage, setProviderChoice, updateTemplate } from "@/server/services/messaging-settings.service";
+import { sendTestAlert } from "@/server/services/system.service";
 
 const done = () => revalidatePath("/settings");
 
@@ -127,4 +128,8 @@ export async function closeBranch(input: unknown): Promise<ActionResult<BranchCl
     revalidatePath("/", "layout");
     return result;
   });
+}
+
+export async function testAlert(): Promise<ActionResult<{ sent: boolean; channels: string[] }>> {
+  return runAction(async () => sendTestAlert(await requireActionSession()));
 }

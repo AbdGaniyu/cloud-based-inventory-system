@@ -1,6 +1,7 @@
 import { unstable_rethrow } from "next/navigation";
 
 import { AppError } from "@/server/errors";
+import { reportError } from "@/server/ops/errors";
 
 /** Shape every server action returns (CLAUDE.md §13). */
 export type ActionResult<T> =
@@ -21,7 +22,7 @@ export async function runAction<T>(body: () => Promise<T>): Promise<ActionResult
     if (error instanceof AppError) {
       return { ok: false, error: error.message, fieldErrors: error.fieldErrors };
     }
-    console.error(error);
+    await reportError(error, { source: "action" });
     return { ok: false, error: UNEXPECTED_ERROR };
   }
 }

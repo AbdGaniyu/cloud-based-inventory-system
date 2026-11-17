@@ -49,3 +49,11 @@ export class ConflictError extends AppError {
     super(message, "CONFLICT");
   }
 }
+
+const RECORD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Ids arrive in URLs: anything that is not a UUID is simply "not found", never a database error. */
+export function requireRecordId(id: string, message = "That record does not exist."): string {
+  if (!RECORD_ID.test(id)) throw new NotFoundError(message);
+  return id;
+}

@@ -7,7 +7,7 @@ import { money, sum, toDb, ZERO } from "@/lib/money";
 import type { SupplierPayoutInput } from "@/lib/validators/payment";
 import { assertCan, type Ctx } from "@/server/auth/permissions";
 import { db } from "@/server/db";
-import { ConflictError, NotFoundError, ValidationError } from "@/server/errors";
+import { ConflictError, NotFoundError, requireRecordId, ValidationError } from "@/server/errors";
 import { writeAudit } from "@/server/services/audit.service";
 import { DUE_SOON_DAYS } from "@/server/services/ledger.service";
 
@@ -250,6 +250,7 @@ export type SupplierProfile = {
 const PROFILE_HISTORY_LIMIT = 100;
 
 export async function getSupplierProfile(ctx: Ctx, id: string, now: Date = new Date()): Promise<SupplierProfile> {
+  requireRecordId(id, "That supplier no longer exists.");
   assertCan(ctx, "payables.view");
   const today = todayInStoreTz(now);
   const supplier = await db.supplier.findUnique({
