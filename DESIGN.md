@@ -68,6 +68,18 @@ Each has a text colour, a tinted background and a border, used together in badge
 | Info | `#1D4ED8` | `#EFF6FF` | `#BFDBFE` |
 | Neutral | `#3F3F46` | `#F4F4F5` | `#E4E4E7` |
 
+Dark theme equivalents:
+
+| Meaning | Text | Background | Border |
+|---|---|---|---|
+| Success | `#4ADE80` | `#052E16` | `#166534` |
+| Warning | `#FBBF24` | `#422006` | `#92400E` |
+| Danger | `#F87171` | `#450A0A` | `#991B1B` |
+| Info | `#60A5FA` | `#172554` | `#1E40AF` |
+| Neutral | `#D4D4D8` | `#27272A` | `#3F3F46` |
+
+Also added for dark: `--primary-hover` `#A5B4FC`; accent text (active nav label) `#3730A3` light / `#C7D2FE` dark.
+
 All text/background pairs must meet WCAG AA (4.5:1). Never signal status by colour alone — badges always carry a text label.
 
 ### 2.4 Status vocabulary
