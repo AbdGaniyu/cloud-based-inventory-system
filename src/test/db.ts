@@ -10,6 +10,7 @@ const APP_TABLES = [
   "notification_logs",
   "recovery_codes",
   "stock_adjustments",
+  "cash_ups",
   "stock_counts",
   "job_runs",
   "error_events",

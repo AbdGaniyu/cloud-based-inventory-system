@@ -15,7 +15,8 @@ export type NavIconKey =
   | "aging"
   | "notifications"
   | "audit"
-  | "settings";
+  | "settings"
+  | "cashup";
 
 /** Which shell count a nav item shows, and how (DESIGN.md §3). */
 export type NavCountKey = "invoices" | "openTransfers" | "overdueAccounts" | "failedMessages";
@@ -73,6 +74,7 @@ const NAV: { label: string | null; items: NavItemDef[] }[] = [
         action: "payment.record",
         count: { key: "overdueAccounts", tone: "attention" },
       },
+      { href: "/cash-up", label: "Cash-up", title: "Cash-up", icon: "cashup", action: "cashup.submit" },
       { href: "/ledger/payables", label: "Payables", icon: "payables", action: "payables.view" },
       { href: "/suppliers", label: "Suppliers", icon: "suppliers", action: "payables.view" },
       { href: "/reports/aging", label: "Aging", title: "Aging report", icon: "aging", action: "report.view" },

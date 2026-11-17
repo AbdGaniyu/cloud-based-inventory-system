@@ -1,12 +1,13 @@
 import "server-only";
 
 import { Prisma } from "@/generated/prisma/client";
-import { addDays, type CalendarDate, daysBetween, fromDbDate, storeInstant, todayInStoreTz, toDbDate } from "@/lib/dates";
+import { addDays, type CalendarDate, calendarDateInStoreTz, daysBetween, fromDbDate, storeInstant, todayInStoreTz, toDbDate } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
 import { can, type Ctx } from "@/server/auth/permissions";
 import { db } from "@/server/db";
 import { type BucketTotals, receivablesAgingSummary, scopeBranchId } from "@/server/services/aging.service";
 import { jobHealth } from "@/server/ops/jobs";
+import { cashUpAlerts } from "@/server/services/cashup.service";
 import { lowStockCountsByBranch } from "@/server/services/inventory.service";
 
 /**
@@ -73,7 +74,7 @@ export type BranchPerformance = {
   lowStock: number;
 };
 
-export type DashboardAlert = { id: string; kind: "LOW_STOCK" | "AGING" | "OVERDUE_BILL" | "FAILED_MESSAGE" | "SYSTEM"; title: string; detail: string; href: string };
+export type DashboardAlert = { id: string; kind: "LOW_STOCK" | "AGING" | "OVERDUE_BILL" | "FAILED_MESSAGE" | "SYSTEM" | "CASHUP"; title: string; detail: string; href: string };
 
 const ZERO = new Prisma.Decimal(0);
 const dec = (v: Prisma.Decimal | null | undefined) => v ?? ZERO;
@@ -261,9 +262,20 @@ async function alerts(ctx: Ctx, branchId: string | null, today: CalendarDate, no
     }
     if (errors > 0) system.push({ id: "errors", kind: "SYSTEM", title: `${errors} server error${errors === 1 ? "" : "s"} in the last 24 hours`, detail: "See Settings → System", href: "/settings?section=system" });
   }
+  // Managers and the owner: drawers left open from an earlier day, and cash-ups that didn't balance.
+  const drawers: DashboardAlert[] = [];
+  const cash = await cashUpAlerts(ctx, now);
+  for (const d of cash.lateDrawers) {
+    drawers.push({ id: `drawer:${d.userId}:${d.branchId}`, kind: "CASHUP", title: `${d.userName} hasn't cashed up`, detail: `${d.branchName} · takings since ${calendarDateInStoreTz(new Date(d.since))}`, href: "/cash-up" });
+  }
+  for (const c of cash.unbalanced) {
+    const n = Number(c.cashVariance);
+    drawers.push({ id: `cashup:${c.id}`, kind: "CASHUP", title: `${c.userName}'s drawer ${n < 0 ? "was short" : n > 0 ? "was over" : "didn't balance"}`, detail: `${c.branchName} · ${c.businessDate} · waiting for sign-off`, href: "/cash-up?status=SUBMITTED" });
+  }
   const failedCount = await db.notificationLog.count({ where: { status: "FAILED", fallbacks: { none: {} }, ...(branchId ? { invoice: { branchId } } : {}) } });
   const items: DashboardAlert[] = [
     ...system,
+    ...drawers,
     ...bills.map((po) => ({
       id: po.id,
       kind: "OVERDUE_BILL" as const,
@@ -290,7 +302,7 @@ async function alerts(ctx: Ctx, branchId: string | null, today: CalendarDate, no
           },
     ),
   ];
-  return { items: items.slice(0, ALERT_LIMIT), count: system.length + bills.length + failedCount + stockCount };
+  return { items: items.slice(0, ALERT_LIMIT), count: system.length + drawers.length + bills.length + failedCount + stockCount };
 }
 
 export async function getDashboard(ctx: Ctx, range: DashboardRange, now: Date = new Date()): Promise<Dashboard> {

@@ -14,6 +14,7 @@ import {
   Truck,
   Users,
   Wallet,
+  Calculator,
 } from "lucide-react";
 
 import type { NavIconKey } from "@/components/shell/nav-config";
@@ -33,4 +34,5 @@ export const NAV_ICONS: Record<NavIconKey, LucideIcon> = {
   notifications: Bell,
   audit: ScrollText,
   settings: Settings,
+  cashup: Calculator,
 };

@@ -61,6 +61,10 @@ type ActionResources = {
   "branch.viewAll": never;
   "audit.view": { branchId: string | null };
   "settings.view": never;
+  /** Cashing up your own drawer at your branch (everyone who takes money). */
+  "cashup.submit": never;
+  /** Seeing everyone's cash-ups and expected takings at a branch, and signing them off. */
+  "cashup.review": BranchResource;
 };
 
 export type Action = keyof ActionResources;
@@ -83,6 +87,7 @@ const ROLE_ONLY: Partial<Record<Action, readonly Role[]>> = {
   "notification.view": ALL_STAFF,
   "inventory.view": ALL_STAFF,
   "stock.viewSisterBranches": ALL_STAFF,
+  "cashup.submit": ALL_STAFF,
   "transfer.view": MANAGERS,
   "report.view": MANAGERS,
 };
@@ -104,6 +109,7 @@ export function can<A extends Action>(ctx: Ctx, action: A, resource?: ResourceFo
   const r = resource as Partial<Record<string, unknown>> | undefined;
   switch (action) {
     case "installment.approve":
+    case "cashup.review":
     case "intake.create":
     case "reminders.manage":
     case "return.create":

@@ -124,6 +124,14 @@ A change is done when `pnpm lint && pnpm typecheck && pnpm test` pass.
   difference into an adjustment. Each one records the reason, who, before/after and the value at cost;
   `stock_adjustments` is append-only like the audit log. A count is refused if stock moved while it was
   being counted, so a sale during the count is never counted twice.
+- **Cash-up** (Money → Cash-up): everyone who takes money counts their own drawer at their branch:
+  opening float, cash in the drawer and, optionally, the POS terminal batch total and confirmed
+  transfers. The count is blind (expected figures appear only after submitting). Expected takings are
+  the payments that person recorded there since their previous cash-up, minus refunds and reversals they
+  handed out, so shifts, skipped days and late sales are neither lost nor counted twice. Managers sign
+  off their branch's cash-ups (never their own), with a note when a drawer didn't balance; the owner
+  signs off any. Figures are frozen once submitted (database trigger). Drawers left open from an
+  earlier day and unbalanced cash-ups show in the dashboard alerts.
 - Document numbers (`INV-IKJ-000123`, `TRF-…`, `PO-…`, `RTN-…`) are gapless per branch.
 - Branch scope and cost visibility are enforced in services; a cashier's browser never receives cost data.
 - Dates are stored in UTC; due dates are calendar dates in Africa/Lagos, where every job runs.
