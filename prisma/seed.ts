@@ -1348,10 +1348,28 @@ async function seedNotifications(ctx: Ctx): Promise<void> {
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+const DEMO_EMAIL_DOMAIN = "@gadgethub.test";
+
+/**
+ * The seed creates demo staff with a published password. Never let it touch a live store: refuse in
+ * production, and refuse any database that already has non-demo users (real staff), unless the
+ * operator explicitly opts in.
+ */
+async function assertSafeToSeed(db: PrismaClient): Promise<void> {
+  if (process.env.NODE_ENV === "production" && process.env.SEED_ALLOW_PRODUCTION !== "true") {
+    throw new Error("Refusing to seed: NODE_ENV is production. The seed adds demo logins with a known password. Set SEED_ALLOW_PRODUCTION=true only for a throwaway demo.");
+  }
+  const realUsers = await db.user.count({ where: { NOT: { email: { endsWith: DEMO_EMAIL_DOMAIN } } } });
+  if (realUsers > 0 && process.env.SEED_ALLOW_REAL_DATA !== "true") {
+    throw new Error(`Refusing to seed: this database has ${realUsers} real user account(s). Seeding would add demo logins with a known password. Set SEED_ALLOW_REAL_DATA=true to override.`);
+  }
+}
+
 async function main(): Promise<void> {
   const db = createPrismaClient();
   const log: string[] = [];
   try {
+    await assertSafeToSeed(db);
     const password = process.env.SEED_PASSWORD || DEFAULT_SEED_PASSWORD;
     const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
     const ctx = await seedReferenceData(db, passwordHash);

@@ -12,20 +12,38 @@ const WINDOW_MS = 15 * 60_000;
 const LOCK_MS = 15 * 60_000;
 
 export const THROTTLE_LIMITS = {
-  /** Per account (email): 5 wrong passwords in 15 minutes locks it for 15 minutes. */
-  account: 5,
-  /** Per client IP across accounts. */
+  /** One account from one IP (or one cashier asking for one manager): 5 wrong passwords locks just that pair. */
+  pair: 5,
+  /** One account from anywhere: caps distributed guessing without letting one attacker lock the owner out. */
+  account: 20,
+  /** One IP across accounts (password spraying). */
   ip: 30,
+  /** One cashier trying many managers' passwords at the POS. */
+  user: 10,
 } as const;
 
 export type ThrottleKey = { key: string; limit: number };
 
+/**
+ * Keys counted for an attempt. Lockouts are per account *and* source first, so someone guessing a
+ * password locks themselves out, not the person whose account it is.
+ */
 export function throttleKeys(scope: "login" | "approve", email: string, extra?: { ip?: string | null; userId?: string }): ThrottleKey[] {
-  const keys: ThrottleKey[] = [{ key: `${scope}:email:${email.trim().toLowerCase()}`, limit: THROTTLE_LIMITS.account }];
+  const account = email.trim().toLowerCase();
+  const source = scope === "approve" ? `user:${extra?.userId ?? "unknown"}` : `ip:${extra?.ip ?? "unknown"}`;
+  const keys: ThrottleKey[] = [
+    { key: `${scope}:pair:${account}|${source}`, limit: THROTTLE_LIMITS.pair },
+    { key: `${scope}:email:${account}`, limit: THROTTLE_LIMITS.account },
+  ];
   if (extra?.ip) keys.push({ key: `${scope}:ip:${extra.ip}`, limit: THROTTLE_LIMITS.ip });
-  // A cashier trying password after password for different managers.
-  if (extra?.userId) keys.push({ key: `${scope}:user:${extra.userId}`, limit: THROTTLE_LIMITS.account });
+  if (extra?.userId) keys.push({ key: `${scope}:user:${extra.userId}`, limit: THROTTLE_LIMITS.user });
   return keys;
+}
+
+/** Keys to clear when an owner resets someone's password, so they can sign in at once. */
+export function throttleKeysForAccount(email: string): { startsWith: string }[] {
+  const account = email.trim().toLowerCase();
+  return ["login", "approve"].flatMap((scope) => [{ startsWith: `${scope}:pair:${account}|` }, { startsWith: `${scope}:email:${account}` }]);
 }
 
 /** Minutes until the first locked key frees up, or null when none is locked. */

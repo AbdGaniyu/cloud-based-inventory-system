@@ -123,6 +123,23 @@ A change is done when `pnpm lint && pnpm typecheck && pnpm test` pass.
   totals and balances reconcile, signed payment ledger, one branch per staff member, …) and the
   append-only trigger on `audit_logs`.
 
+## Security
+
+- **Access control** is enforced in services (`can()`), never only in the UI; cost data is stripped
+  server-side for non-owners; every money and stock change is audited in the same transaction, and
+  `audit_logs` rejects UPDATE/DELETE.
+- **Headers** (`next.config.ts`): Content-Security-Policy (same-origin only, no framing, no plugins, no
+  base/form hijacking), HSTS on https, nosniff, Referrer-Policy, Permissions-Policy, COOP; no
+  `X-Powered-By`. Inline scripts remain allowed because Cache Components' prerendered shells cannot
+  carry a per-request nonce (see the Next.js CSP guide).
+- **Sign-in throttling**: 5 wrong passwords lock that account *from that IP* for 15 minutes, 20 across
+  all IPs lock the account, 30 from one IP across accounts lock the IP. Someone guessing locks
+  themselves out, not you; an owner's password reset lifts a lock. The client IP comes from a trusted
+  source (see `CLIENT_IP_HEADER` / `TRUSTED_PROXY_COUNT`). POS manager approvals are throttled the same way.
+- **Secrets**: provider keys are stored AES-256-GCM encrypted and only ever shown as the last four
+  characters; customer document links are HMAC-signed and expire.
+- **Seed safety**: `pnpm db:seed` refuses to run in production or on a database with real users.
+
 ## Deploying
 
 1. Provision Postgres (any managed provider) and set `DATABASE_URL`.

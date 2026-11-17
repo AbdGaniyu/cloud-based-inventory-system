@@ -12,6 +12,7 @@ import { assertCan, type Ctx } from "@/server/auth/permissions";
 import { db } from "@/server/db";
 import { ConflictError, NotFoundError, ValidationError } from "@/server/errors";
 import { writeAudit } from "@/server/services/audit.service";
+import { throttleKeysForAccount } from "@/server/services/throttle.service";
 import { cancelTransferWithin } from "@/server/services/transfer.service";
 import { getSetting } from "@/server/services/settings.service";
 
@@ -233,7 +234,7 @@ export async function resetUserPassword(ctx: Ctx, input: { id: string; password:
   await db.$transaction(async (tx) => {
     await tx.user.update({ where: { id: input.id }, data: { passwordHash } });
     // A locked-out person can sign in with the new password straight away.
-    await tx.authThrottle.deleteMany({ where: { key: { in: [`login:email:${user.email}`, `approve:email:${user.email}`] } } });
+    await tx.authThrottle.deleteMany({ where: { OR: throttleKeysForAccount(user.email).map((k) => ({ key: k })) } });
     await writeAudit(tx, { userId: ctx.userId, branchId: user.branchId, action: "user.resetPassword", entityType: "User", entityId: input.id, after: { passwordChanged: true } });
   });
 }

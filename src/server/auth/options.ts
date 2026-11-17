@@ -4,6 +4,7 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 
 import { loginSchema } from "@/lib/validators/auth";
+import { clientIp } from "@/server/client-ip";
 import { verifyCredentials } from "@/server/services/auth.service";
 
 /** One working shift; staff sign in again after this. */
@@ -31,9 +32,7 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials, req) {
         const parsed = loginSchema.safeParse(credentials);
         if (!parsed.success) return null;
-        const forwardedFor = req.headers?.["x-forwarded-for"];
-        const ip = typeof forwardedFor === "string" ? forwardedFor.split(",")[0]?.trim() : null;
-        return verifyCredentials(parsed.data, ip);
+        return verifyCredentials(parsed.data, clientIp(req.headers ?? {}));
       },
     }),
   ],
