@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Bell, Clock, HandCoins, MessageSquareX, PackageMinus, Wallet } from "lucide-react";
+import { AlertTriangle, Bell, Clock, HandCoins, MessageSquareX, PackageMinus, Repeat, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -21,6 +21,9 @@ export function AlertsMenu({ alerts }: { alerts: AlertBreakdown }) {
       ? []
       : [{ key: "payables", label: "Overdue supplier bills", count: alerts.overduePayables, href: "/ledger/payables", icon: Wallet, tone: "danger" as const }]),
     { key: "failed", label: "Messages that failed to send", count: alerts.failedMessages, href: "/notifications", icon: MessageSquareX, tone: "danger" },
+    ...(alerts.tradeInsPending === null
+      ? []
+      : [{ key: "tradeins", label: "Trade-ins waiting to be priced", count: alerts.tradeInsPending, href: "/inventory?status=TRADED_IN", icon: Repeat, tone: "warning" as const }]),
   ];
   const active = rows.filter((r) => r.count > 0);
 

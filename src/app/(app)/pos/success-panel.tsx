@@ -1,15 +1,17 @@
 "use client";
 
+import { Download, FileText, Printer, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+
+import { formatCalendarDate } from "@/app/(app)/pos/payment-section";
 import { Money } from "@/components/money";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { CheckoutResult } from "@/server/services/invoice.service";
-import { formatCalendarDate } from "@/app/(app)/pos/payment-section";
 
 /** Shown in place of the cart after checkout (mockup: pos-success). */
 export function SuccessPanel({ result, onNewSale }: { result: CheckoutResult; onNewSale: () => void }) {
   const balanceDue = Number(result.balance) > 0;
-  const comingSoon = "Printable documents arrive in build step 6";
+  const singleCard = result.warrantyCardIds.length === 1 ? result.warrantyCardIds[0] : null;
   return (
     <div className="flex h-full flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
@@ -50,30 +52,32 @@ export function SuccessPanel({ result, onNewSale }: { result: CheckoutResult; on
         </p>
 
         <div className="mt-4 grid grid-cols-2 gap-3">
-          {["Print receipt", "Download invoice"].map((label) => (
-            <Tooltip key={label}>
-              <TooltipTrigger asChild>
-                <span tabIndex={0}>
-                  <Button variant="secondary" size="lg" className="w-full" disabled>
-                    {label}
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>{comingSoon}</TooltipContent>
-            </Tooltip>
-          ))}
+          <Button asChild variant="secondary" size="lg">
+            <a href={`/print/receipt/${result.invoiceId}?autoprint=1`} target="_blank" rel="noopener">
+              <Printer aria-hidden data-icon="inline-start" /> Print receipt
+            </a>
+          </Button>
+          <Button asChild variant="secondary" size="lg">
+            <a href={`/api/pdf/invoice/${result.invoiceId}`} target="_blank" rel="noopener">
+              <Download aria-hidden data-icon="inline-start" /> Download invoice
+            </a>
+          </Button>
           {result.warrantyCardIds.length > 0 && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span tabIndex={0} className="col-span-2">
-                  <Button variant="secondary" size="lg" className="w-full" disabled>
-                    View warranty card{result.warrantyCardIds.length > 1 ? "s" : ""}
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>{comingSoon}</TooltipContent>
-            </Tooltip>
+            <Button asChild variant="secondary" size="lg" className="col-span-2">
+              <a
+                href={singleCard ? `/api/pdf/warranty/${singleCard}` : `/invoices/${result.invoiceId}`}
+                target={singleCard ? "_blank" : undefined}
+                rel={singleCard ? "noopener" : undefined}
+              >
+                <ShieldCheck aria-hidden data-icon="inline-start" /> View warranty card{singleCard ? "" : "s"}
+              </a>
+            </Button>
           )}
+          <Button asChild variant="ghost" size="lg" className="col-span-2">
+            <Link href={`/invoices/${result.invoiceId}`}>
+              <FileText aria-hidden data-icon="inline-start" /> View invoice
+            </Link>
+          </Button>
         </div>
       </div>
       <div className="border-t border-border p-4">

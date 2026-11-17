@@ -25,7 +25,12 @@ export function LoginForm({ callbackPath }: { callbackPath: string }) {
     setFormError(null);
     const result = await signIn("credentials", { ...values, redirect: false });
     if (!result || result.error) {
-      setFormError("Email or password is incorrect, or the account is disabled.");
+      // next-auth passes our lockout message through; anything else stays generic.
+      setFormError(
+        result?.error?.startsWith("Too many")
+          ? result.error
+          : "Email or password is incorrect, or the account is disabled.",
+      );
       form.setValue("password", "");
       form.setFocus("password");
       return;

@@ -18,4 +18,7 @@ export const STORE = {
   timezone: "Africa/Lagos",
   /** A serialized unit IN_STOCK for more than this many days raises an aging alert. */
   agingAlertDays: 60,
+  /** Placeholder wording printed on invoices and receipts — replace with the store's real policy. */
+  returnPolicy:
+    "Returns within 7 days with this invoice, in the condition sold and with all accessories. Physical and liquid damage are not covered.",
 } as const;

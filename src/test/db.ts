@@ -5,6 +5,7 @@ import type { Ctx } from "@/server/auth/permissions";
 import { db } from "@/server/db";
 
 const APP_TABLES = [
+  "auth_throttles",
   "audit_logs",
   "notification_logs",
   "stock_alerts",

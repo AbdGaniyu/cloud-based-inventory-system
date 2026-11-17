@@ -4,7 +4,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { toDbDate, todayInStoreTz } from "@/lib/dates";
 import { can, type Ctx } from "@/server/auth/permissions";
 import { db } from "@/server/db";
-import { agingCountsByBranch, lowStockCountsByBranch } from "@/server/services/inventory.service";
+import { agingCountsByBranch, countPendingTradeIns, lowStockCountsByBranch } from "@/server/services/inventory.service";
 
 export type AlertBreakdown = {
   overdueAccounts: number;
@@ -13,6 +13,8 @@ export type AlertBreakdown = {
   /** Null when the role may not see payables. */
   overduePayables: number | null;
   failedMessages: number;
+  /** Owner only: traded-in devices waiting to be inspected and priced. */
+  tradeInsPending: number | null;
   total: number;
 };
 
@@ -52,12 +54,13 @@ function total(map: Map<string, number>): number {
 export async function getShellSummary(ctx: Ctx): Promise<ShellSummary> {
   const branchFilter = ctx.activeBranchId ? { branchId: ctx.activeBranchId } : {};
   const seesPayables = can(ctx, "payables.view");
+  const pricesTradeIns = can(ctx, "price.edit");
   const today = toDbDate(todayInStoreTz());
 
   // Rail badges always cover every branch the user can pick, so compute those unscoped for owners.
   const railCtx: Ctx = ctx.role === "OWNER" ? { ...ctx, activeBranchId: null } : ctx;
 
-  const [invoices, openTransfers, failedMessages, overduePayables, overdue, lowStock, aging] = await Promise.all([
+  const [invoices, openTransfers, failedMessages, overduePayables, overdue, lowStock, aging, tradeInsPending] = await Promise.all([
     db.invoice.count({ where: branchFilter }),
     db.stockTransfer.count({
       where: {
@@ -80,6 +83,7 @@ export async function getShellSummary(ctx: Ctx): Promise<ShellSummary> {
     overdueAccountsByBranch(railCtx),
     lowStockCountsByBranch(railCtx),
     agingCountsByBranch(railCtx),
+    pricesTradeIns ? countPendingTradeIns(ctx) : Promise.resolve(null),
   ]);
 
   const branchAlerts: Record<string, number> = {};
@@ -101,7 +105,8 @@ export async function getShellSummary(ctx: Ctx): Promise<ShellSummary> {
       agingUnits,
       overduePayables,
       failedMessages,
-      total: overdueAccounts + lowStockCount + agingUnits + (overduePayables ?? 0) + failedMessages,
+      tradeInsPending,
+      total: overdueAccounts + lowStockCount + agingUnits + (overduePayables ?? 0) + failedMessages + (tradeInsPending ?? 0),
     },
     branchAlerts,
   };

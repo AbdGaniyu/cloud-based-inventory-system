@@ -4,6 +4,7 @@ import { Document, Image, Page, renderToBuffer, StyleSheet, Text, View } from "@
 import bwipjs from "bwip-js/node";
 
 import { CONDITION_LABELS } from "@/components/ui/status-badge";
+import { PDF_MONO, PDF_SANS, registerPdfFonts } from "@/server/pdf/fonts";
 import { STORE } from "@/config/store";
 import { formatPhoneDisplay } from "@/lib/phone";
 import type { TransferDetail } from "@/server/services/transfer.service";
@@ -15,17 +16,17 @@ const STATUS: Record<TransferDetail["status"], string> = { DRAFT: "Draft", IN_TR
 const dateTime = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: STORE.timezone });
 
 const s = StyleSheet.create({
-  page: { paddingTop: 18 * MM, paddingBottom: 22 * MM, paddingHorizontal: 18 * MM, fontFamily: "Helvetica", fontSize: 9, color: "#09090B" },
+  page: { paddingTop: 18 * MM, paddingBottom: 22 * MM, paddingHorizontal: 18 * MM, fontFamily: PDF_SANS, fontSize: 9, color: "#09090B" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  store: { fontSize: 14, fontFamily: "Helvetica-Bold" },
-  title: { fontSize: 18, fontFamily: "Helvetica-Bold", textAlign: "right" },
+  store: { fontSize: 14, fontWeight: 700 },
+  title: { fontSize: 18, fontWeight: 700, textAlign: "right" },
   muted: { color: "#52525B" },
-  mono: { fontFamily: "Courier" },
+  mono: { fontFamily: PDF_MONO },
   rule: { borderBottomWidth: 1, borderBottomColor: "#18181B", marginVertical: 10 },
   blocks: { flexDirection: "row", gap: 16, marginBottom: 10 },
   block: { flex: 1, borderWidth: 0.75, borderColor: "#D4D4D8", borderRadius: 3, padding: 8 },
   label: { fontSize: 7, color: "#52525B", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 },
-  blockName: { fontSize: 11, fontFamily: "Helvetica-Bold", marginBottom: 2 },
+  blockName: { fontSize: 11, fontWeight: 700, marginBottom: 2 },
   meta: { flexDirection: "row", flexWrap: "wrap", gap: 16, marginBottom: 12 },
   table: { borderWidth: 0.75, borderColor: "#D4D4D8", borderRadius: 3 },
   row: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#E4E4E7", paddingVertical: 4, paddingHorizontal: 6 },
@@ -174,6 +175,7 @@ function WaybillDocument({ transfer, barcode }: { transfer: TransferDetail; barc
 }
 
 export async function renderWaybill(transfer: TransferDetail): Promise<Buffer> {
+  registerPdfFonts();
   const barcode = await bwipjs.toBuffer({ bcid: "code128", text: transfer.number, scale: 3, height: 8, includetext: false });
   return renderToBuffer(<WaybillDocument transfer={transfer} barcode={barcode} />);
 }

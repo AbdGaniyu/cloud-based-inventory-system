@@ -10,7 +10,9 @@ import { money, toDb } from "@/lib/money";
 import { stripCostFields, type Visible } from "@/server/auth/field-access";
 import { assertCan, can, type Ctx } from "@/server/auth/permissions";
 import { db } from "@/server/db";
-import { NotFoundError } from "@/server/errors";
+import { ConflictError, NotFoundError, ValidationError } from "@/server/errors";
+import { writeAudit } from "@/server/services/audit.service";
+import type { AcceptTradeInInput } from "@/lib/validators/unit";
 import { getSetting } from "@/server/services/settings.service";
 
 const MS_PER_DAY = 86_400_000;
@@ -578,4 +580,36 @@ export async function getStockSummary(ctx: Ctx, now: Date = new Date()): Promise
         ? null
         : { basis, amount: basis === "cost" ? sumOf(units?.at_cost, qty?.at_cost) : sumOf(units?.at_selling, qty?.at_selling) },
   };
+}
+
+/**
+ * Releases a traded-in device for sale once the owner has inspected and priced it
+ * (trade-ins are booked at the credit given and can't be sold while TRADED_IN).
+ */
+export async function acceptTradeIn(ctx: Ctx, input: AcceptTradeInInput): Promise<void> {
+  assertCan(ctx, "price.edit");
+  const unit = await db.serializedUnit.findUnique({ where: { id: input.unitId }, select: { status: true, sellingPrice: true, condition: true, batteryHealth: true, branchId: true } });
+  if (!unit) throw new NotFoundError("That device no longer exists.");
+  if (unit.status !== "TRADED_IN") throw new ValidationError("Only traded-in devices waiting for inspection can be released this way.");
+  await db.$transaction(async (tx) => {
+    const released = await tx.serializedUnit.updateMany({
+      where: { id: input.unitId, status: "TRADED_IN" },
+      data: { status: "IN_STOCK", condition: input.condition, batteryHealth: input.batteryHealth, sellingPrice: toDb(input.sellingPrice) },
+    });
+    if (released.count !== 1) throw new ConflictError("Someone else just updated this device. Refresh to see it.");
+    await writeAudit(tx, {
+      userId: ctx.userId,
+      branchId: unit.branchId,
+      action: "unit.acceptTradeIn",
+      entityType: "SerializedUnit",
+      entityId: input.unitId,
+      before: { status: unit.status, sellingPrice: unit.sellingPrice, condition: unit.condition, batteryHealth: unit.batteryHealth },
+      after: { status: "IN_STOCK", sellingPrice: toDb(input.sellingPrice), condition: input.condition, batteryHealth: input.batteryHealth },
+    });
+  });
+}
+
+/** Traded-in devices waiting for the owner to inspect and price them. */
+export async function countPendingTradeIns(ctx: Ctx): Promise<number> {
+  return db.serializedUnit.count({ where: { status: "TRADED_IN", ...(ctx.activeBranchId ? { branchId: ctx.activeBranchId } : {}) } });
 }

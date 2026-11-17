@@ -1,4 +1,4 @@
-import type { PurchaseOrderStatus, TransferStatus, UnitCondition, UnitStatus } from "@/generated/prisma/enums";
+import type { InvoiceStatus, PurchaseOrderStatus, ScheduleStatus, TransferStatus, UnitCondition, UnitStatus } from "@/generated/prisma/enums";
 import { cn } from "@/lib/utils";
 
 /** One label and one colour per status, everywhere (DESIGN.md §2.4). */
@@ -88,4 +88,27 @@ const TRANSFER_STATUS: Record<TransferStatus, { label: string; tone: Tone }> = {
 export function TransferStatusBadge({ status }: { status: TransferStatus }) {
   const s = TRANSFER_STATUS[status];
   return <Badge tone={s.tone}>{s.label}</Badge>;
+}
+
+const INVOICE_STATUS: Record<InvoiceStatus | "OVERDUE", { label: string; tone: Tone }> = {
+  PAID: { label: "Paid", tone: "success" },
+  PARTIALLY_PAID: { label: "Partially Paid", tone: "warning" },
+  UNPAID: { label: "Unpaid", tone: "neutral" },
+  OVERDUE: { label: "Overdue", tone: "danger" },
+  VOID: { label: "Void", tone: "neutral" },
+  RETURNED: { label: "Returned", tone: "neutral" },
+};
+
+export function InvoiceStatusBadge({ status }: { status: InvoiceStatus | "OVERDUE" }) {
+  const s = INVOICE_STATUS[status];
+  return <Badge tone={s.tone}>{s.label}</Badge>;
+}
+
+/** Installment row status; "Due soon" when unpaid and due within 3 days (DESIGN.md §2.4). */
+export function ScheduleStatusBadge({ status, dueSoon }: { status: ScheduleStatus; dueSoon?: boolean }) {
+  if (status === "PAID") return <Badge tone="success">Paid</Badge>;
+  if (status === "OVERDUE") return <Badge tone="danger">Overdue</Badge>;
+  if (status === "WAIVED") return <Badge tone="neutral" className="italic">Waived</Badge>;
+  if (dueSoon) return <Badge tone="warning">Due soon</Badge>;
+  return <Badge tone="neutral">{status === "PARTIAL" ? "Part paid" : "Pending"}</Badge>;
 }

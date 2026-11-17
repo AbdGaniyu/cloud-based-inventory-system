@@ -5,7 +5,7 @@
 export class AppError extends Error {
   constructor(
     message: string,
-    readonly code: "FORBIDDEN" | "NOT_FOUND" | "VALIDATION" | "CONFLICT" | "UNAUTHENTICATED",
+    readonly code: "FORBIDDEN" | "NOT_FOUND" | "VALIDATION" | "CONFLICT" | "UNAUTHENTICATED" | "TOO_MANY_ATTEMPTS",
     readonly fieldErrors?: Record<string, string[]>,
   ) {
     super(message);
@@ -34,6 +34,12 @@ export class NotFoundError extends AppError {
 export class ValidationError extends AppError {
   constructor(message: string, fieldErrors?: Record<string, string[]>) {
     super(message, "VALIDATION", fieldErrors);
+  }
+}
+
+export class TooManyAttemptsError extends AppError {
+  constructor(minutes: number, what = "sign-in attempts") {
+    super(`Too many ${what}. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`, "TOO_MANY_ATTEMPTS");
   }
 }
 

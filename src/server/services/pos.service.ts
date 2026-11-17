@@ -61,13 +61,28 @@ export type PosCatalog = {
   exact: { kind: "unit"; id: string } | { kind: "accessory"; productId: string } | null;
 };
 
-/** Where the POS sells from: the user's branch, the owner's active branch, or (all-branches view) the first store. */
-export async function resolvePosBranch(ctx: Ctx): Promise<PosBranch> {
+export const POS_BRANCH_COOKIE = "gh_pos_branch";
+
+/** Stores an owner can sell from in all-branches view. */
+export async function listPosStores(ctx: Ctx): Promise<PosBranch[]> {
+  assertCan(ctx, "invoice.create");
+  return db.branch.findMany({ where: { isActive: true, type: "STORE" }, select: { id: true, name: true, code: true }, orderBy: { name: "asc" } });
+}
+
+/**
+ * Where the POS sells from: the user's own branch; the owner's active branch; or, in the owner's
+ * all-branches view, the store they last picked at the POS (remembered in a cookie), else the first store.
+ */
+export async function resolvePosBranch(ctx: Ctx, rememberedBranchId?: string): Promise<PosBranch> {
   assertCan(ctx, "invoice.create");
   const preferred = ctx.role === "OWNER" ? ctx.activeBranchId : ctx.branchId;
-  const branch = preferred
-    ? await db.branch.findFirst({ where: { id: preferred, isActive: true }, select: { id: true, name: true, code: true } })
-    : await db.branch.findFirst({ where: { isActive: true, type: "STORE" }, select: { id: true, name: true, code: true }, orderBy: { name: "asc" } });
+  if (preferred) {
+    const branch = await db.branch.findFirst({ where: { id: preferred, isActive: true }, select: { id: true, name: true, code: true } });
+    if (!branch) throw new ValidationError("This branch is not available.");
+    return branch;
+  }
+  const stores = await listPosStores(ctx);
+  const branch = stores.find((s) => s.id === rememberedBranchId) ?? stores[0];
   if (!branch) throw new ValidationError("There is no active store branch to sell from.");
   return branch;
 }

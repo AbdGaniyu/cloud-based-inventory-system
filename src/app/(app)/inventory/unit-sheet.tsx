@@ -1,12 +1,22 @@
 "use client";
 
-import { ArrowLeftRight, PackageCheck, Repeat, RotateCcw, ShoppingBag, XCircle } from "lucide-react";
+import { ArrowLeftRight, Loader2, PackageCheck, Repeat, RotateCcw, ShoppingBag, XCircle } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
+
+import { releaseTradeIn } from "@/app/(app)/inventory/actions";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { STORE } from "@/config/store";
+import { UnitCondition } from "@/generated/prisma/enums";
 
 import { IdentifierChip } from "@/components/identifier-chip";
 import { Money } from "@/components/money";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { ConditionBadge, UnitStatusBadge } from "@/components/ui/status-badge";
+import { CONDITION_LABELS, ConditionBadge, UnitStatusBadge } from "@/components/ui/status-badge";
 import { useUrlParams } from "@/hooks/use-url-params";
 import type { UnitDetail, UnitEvent } from "@/server/services/inventory.service";
 
@@ -31,8 +41,75 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
+/** Owner inspects a traded-in device, sets condition and price, and releases it for sale. */
+function ReleaseTradeIn({ unit }: { unit: UnitDetail["unit"] }) {
+  const router = useRouter();
+  const [condition, setCondition] = useState<UnitCondition>(unit.condition);
+  const [battery, setBattery] = useState(unit.batteryHealth === null ? "" : String(unit.batteryHealth));
+  const [price, setPrice] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function release() {
+    setError(null);
+    startTransition(async () => {
+      const result = await releaseTradeIn({
+        unitId: unit.id,
+        condition,
+        batteryHealth: battery === "" ? null : Number(battery),
+        sellingPrice: price,
+      });
+      if (!result.ok) return setError(result.error);
+      toast.success("Trade-in released for sale");
+      router.refresh();
+    });
+  }
+
+  return (
+    <section aria-labelledby="release-heading" className="mt-6 rounded-xl border border-warning-border bg-warning-bg p-4">
+      <h3 id="release-heading" className="text-h3 text-foreground">
+        Inspect and release for sale
+      </h3>
+      <p className="mb-3 text-small text-muted-foreground">Booked at the trade-in credit. Check it over, then set its selling price.</p>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="flex flex-col gap-1.5 text-small font-medium">
+          Condition
+          <Select value={condition} onValueChange={(v) => setCondition(v as UnitCondition)}>
+            <SelectTrigger className="w-full bg-background">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.values(UnitCondition).map((c) => (
+                <SelectItem key={c} value={c}>
+                  {CONDITION_LABELS[c]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="flex flex-col gap-1.5 text-small font-medium">
+          Battery health %
+          <Input type="number" min={0} max={100} value={battery} onChange={(e) => setBattery(e.target.value)} className="bg-background text-right tabular-nums" />
+        </label>
+        <label className="col-span-2 flex flex-col gap-1.5 text-small font-medium">
+          Selling price
+          <span className="relative">
+            <span aria-hidden className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground">{STORE.currencySymbol}</span>
+            <Input inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} className="bg-background pl-7 text-right tabular-nums" />
+          </span>
+        </label>
+      </div>
+      {error && <p role="alert" className="mt-2 text-small text-danger">{error}</p>}
+      <Button className="mt-3 w-full" disabled={pending || !price.trim()} onClick={release}>
+        {pending && <Loader2 aria-hidden className="animate-spin" />}
+        Release for sale
+      </Button>
+    </section>
+  );
+}
+
 /** Right-side detail sheet for one device (DESIGN.md §4 "Detail sheet", §5.7 history timeline). */
-export function UnitSheet({ detail, error }: { detail: UnitDetail | null; error: string | null }) {
+export function UnitSheet({ detail, error, canReleaseTradeIns = false }: { detail: UnitDetail | null; error: string | null; canReleaseTradeIns?: boolean }) {
   const { setParams } = useUrlParams();
   const open = Boolean(detail || error);
   const close = () => setParams({ unit: null }, { keepPage: true });
@@ -81,6 +158,7 @@ export function UnitSheet({ detail, error }: { detail: UnitDetail | null; error:
                 )}
               </dl>
               {detail.unit.notes && <p className="mt-4 rounded-lg bg-surface p-3 text-small text-muted-foreground">{detail.unit.notes}</p>}
+              {detail.unit.status === "TRADED_IN" && canReleaseTradeIns && <ReleaseTradeIn key={detail.unit.id} unit={detail.unit} />}
 
               <h3 className="mt-8 mb-3 text-h3">History</h3>
               {detail.events.length === 0 ? (

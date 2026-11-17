@@ -1064,3 +1064,18 @@ model AuditLog {
   @@index([createdAt])
   @@map("audit_logs")
 }
+
+/// Failed sign-in / manager-approval attempts per key ("login:email:…", "login:ip:…", "approve:email:…").
+/// One counter row per key, not history; cleared on success. Used to lock out password guessing.
+model AuthThrottle {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  key             String    @unique
+  failures        Int       @default(0)
+  windowStartedAt DateTime  @map("window_started_at") @db.Timestamptz(3)
+  lockedUntil     DateTime? @map("locked_until") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("auth_throttles")
+}

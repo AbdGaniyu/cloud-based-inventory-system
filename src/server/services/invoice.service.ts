@@ -19,6 +19,7 @@ import { db } from "@/server/db";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/server/errors";
 import { writeAudit } from "@/server/services/audit.service";
 import { checkCredentials } from "@/server/services/auth.service";
+import { lockedMinutes, recordFailure, recordSuccess, throttleKeys } from "@/server/services/throttle.service";
 import { getSetting } from "@/server/services/settings.service";
 
 const TX_OPTIONS = { timeout: 20_000, maxWait: 5_000 };
@@ -60,8 +61,15 @@ function warrantyExpiry(start: CalendarDate, months: number): CalendarDate {
 async function resolveApprover(ctx: Ctx, branchId: string, approver: { email: string; password: string } | undefined): Promise<string> {
   if (can(ctx, "installment.approve", { branchId })) return ctx.userId;
   if (!approver) throw new ForbiddenError("This plan needs a manager's approval. Ask a manager to approve it.");
+  const keys = throttleKeys("approve", approver.email, { userId: ctx.userId });
+  const locked = await lockedMinutes(keys);
+  if (locked !== null) throw new ForbiddenError(`Too many wrong approvals. Try again in ${locked} minute${locked === 1 ? "" : "s"}.`);
   const user = await checkCredentials(approver);
-  if (!user) throw new ForbiddenError("That manager email or password is incorrect.");
+  if (!user) {
+    await recordFailure(keys);
+    throw new ForbiddenError("That manager email or password is incorrect.");
+  }
+  await recordSuccess(keys);
   const approverCtx: Ctx = { userId: user.id, role: user.role, branchId: user.branchId, activeBranchId: user.branchId };
   if (!can(approverCtx, "installment.approve", { branchId })) {
     throw new ForbiddenError(`${user.name} can't approve installment plans at this branch.`);
@@ -465,4 +473,113 @@ export async function getInvoiceSummary(ctx: Ctx, id: string) {
   if (!invoice) throw new NotFoundError("That invoice no longer exists.");
   if (ctx.role !== "OWNER" && invoice.branchId !== ctx.branchId) throw new ForbiddenError("That invoice belongs to another branch.");
   return invoice;
+}
+
+// ─── Invoice list (read-only views; payments and returns arrive in later steps) ──
+
+export type InvoiceListStatus = "PAID" | "PARTIALLY_PAID" | "UNPAID" | "OVERDUE" | "VOID" | "RETURNED";
+
+export type InvoiceListRow = {
+  id: string;
+  number: string;
+  customerName: string;
+  customerPhone: string;
+  branchCode: string;
+  createdAt: string;
+  paymentType: "FULL" | "INSTALLMENT";
+  total: string;
+  amountPaid: string;
+  balance: string;
+  displayStatus: InvoiceListStatus;
+};
+
+const LIST_PAGE_SIZE = 25;
+
+/** Invoices with an instalment past due and not fully paid (the nightly job also marks these). */
+function overdueWhere(today: Date): Prisma.InvoiceWhereInput {
+  return {
+    status: { in: ["UNPAID", "PARTIALLY_PAID"] },
+    installmentPlan: { schedule: { some: { dueDate: { lt: today }, status: { in: ["PENDING", "PARTIAL", "OVERDUE"] } } } },
+  };
+}
+
+export async function listInvoices(
+  ctx: Ctx,
+  filters: { q?: string; status?: InvoiceListStatus; page?: number },
+): Promise<{ rows: InvoiceListRow[]; total: number; page: number; pageSize: number; counts: Record<InvoiceListStatus | "ALL", number> }> {
+  assertCan(ctx, "invoice.view");
+  const branchId = ctx.role === "OWNER" ? ctx.activeBranchId : ctx.branchId;
+  const today = toDbDate(todayInStoreTz());
+  const q = filters.q?.trim();
+  const digits = q?.replace(/\D/g, "") ?? "";
+  const phoneFragment = digits.startsWith("0") ? digits.slice(1) : digits;
+  const scope: Prisma.InvoiceWhereInput = {
+    ...(branchId ? { branchId } : {}),
+    ...(q
+      ? {
+          OR: [
+            { number: { contains: q, mode: "insensitive" } },
+            { customer: { name: { contains: q, mode: "insensitive" } } },
+            ...(phoneFragment.length >= 3 ? [{ customer: { phoneE164: { contains: phoneFragment } } }] : []),
+          ],
+        }
+      : {}),
+  };
+  const statusWhere: Prisma.InvoiceWhereInput =
+    filters.status === "OVERDUE" ? overdueWhere(today) : filters.status ? { status: filters.status } : {};
+  const where: Prisma.InvoiceWhereInput = { AND: [scope, statusWhere] };
+  const page = Math.max(1, filters.page ?? 1);
+
+  const [rows, total, grouped, overdueCount] = await Promise.all([
+    db.invoice.findMany({
+      where,
+      select: {
+        id: true,
+        number: true,
+        createdAt: true,
+        paymentType: true,
+        total: true,
+        amountPaid: true,
+        balance: true,
+        status: true,
+        customer: { select: { name: true, phoneE164: true } },
+        branch: { select: { code: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * LIST_PAGE_SIZE,
+      take: LIST_PAGE_SIZE,
+    }),
+    db.invoice.count({ where }),
+    db.invoice.groupBy({ by: ["status"], where: scope, _count: { _all: true } }),
+    db.invoice.count({ where: { AND: [scope, overdueWhere(today)] } }),
+  ]);
+  const overdueIds = new Set(
+    (await db.invoice.findMany({ where: { AND: [{ id: { in: rows.map((r) => r.id) } }, overdueWhere(today)] }, select: { id: true } })).map((r) => r.id),
+  );
+
+  const counts: Record<InvoiceListStatus | "ALL", number> = { ALL: 0, PAID: 0, PARTIALLY_PAID: 0, UNPAID: 0, OVERDUE: overdueCount, VOID: 0, RETURNED: 0 };
+  for (const g of grouped) {
+    counts[g.status] = g._count._all;
+    counts.ALL += g._count._all;
+  }
+
+  return {
+    rows: rows.map((r) => ({
+      id: r.id,
+      number: r.number,
+      customerName: r.customer.name,
+      customerPhone: r.customer.phoneE164,
+      branchCode: r.branch.code,
+      createdAt: r.createdAt.toISOString(),
+      paymentType: r.paymentType,
+      total: r.total.toFixed(2),
+      amountPaid: r.amountPaid.toFixed(2),
+      balance: r.balance.toFixed(2),
+      displayStatus: overdueIds.has(r.id) ? "OVERDUE" : r.status,
+    })),
+    total,
+    page,
+    pageSize: LIST_PAGE_SIZE,
+    counts,
+  };
 }

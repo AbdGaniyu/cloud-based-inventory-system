@@ -161,7 +161,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/inventory">
         </div>
         {tabBody}
       </PageBody>
-      <UnitSheet detail={unitDetail} error={unitError} />
+      <UnitSheet detail={unitDetail} error={unitError} canReleaseTradeIns={canEditProducts} />
     </>
   );
 

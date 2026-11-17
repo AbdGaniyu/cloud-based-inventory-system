@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { z } from "zod";
 
 import { checkoutSchema } from "@/lib/validators/checkout";
@@ -10,7 +11,8 @@ import { requireActionSession } from "@/server/auth/session";
 import { ValidationError } from "@/server/errors";
 import { createCustomer, type CustomerOption, searchCustomers } from "@/server/services/customer.service";
 import { type CheckoutResult, checkout } from "@/server/services/invoice.service";
-import { type PosCatalog, searchCatalog } from "@/server/services/pos.service";
+import { listPosStores, POS_BRANCH_COOKIE, type PosCatalog, searchCatalog } from "@/server/services/pos.service";
+import { assertCan } from "@/server/auth/permissions";
 
 function parse<T>(schema: z.ZodType<T>, input: unknown): T {
   const parsed = schema.safeParse(input);
@@ -45,5 +47,21 @@ export async function completeSale(input: unknown): Promise<ActionResult<Checkou
     revalidatePath("/inventory");
     revalidatePath("/pos");
     return result;
+  });
+}
+
+const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
+
+/** Owner, all-branches view: which store the POS sells from (remembered per browser). */
+export async function choosePosBranch(input: unknown): Promise<ActionResult<null>> {
+  return runAction(async () => {
+    const branchId = parse(z.guid(), input);
+    const ctx = await requireActionSession();
+    assertCan(ctx, "branch.viewAll");
+    const stores = await listPosStores(ctx);
+    if (!stores.some((s) => s.id === branchId)) throw new ValidationError("Choose an active store.");
+    (await cookies()).set(POS_BRANCH_COOKIE, branchId, { httpOnly: true, sameSite: "lax", path: "/", maxAge: ONE_YEAR_SECONDS });
+    revalidatePath("/pos");
+    return null;
   });
 }

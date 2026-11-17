@@ -5,7 +5,9 @@ import bcrypt from "bcryptjs";
 import type { Role } from "@/generated/prisma/enums";
 import type { LoginInput } from "@/lib/validators/auth";
 import { db } from "@/server/db";
+import { TooManyAttemptsError } from "@/server/errors";
 import { writeAudit } from "@/server/services/audit.service";
+import { lockedMinutes, recordFailure, recordSuccess, throttleKeys } from "@/server/services/throttle.service";
 
 export type AuthenticatedUser = {
   id: string;
@@ -43,8 +45,16 @@ export async function checkCredentials(input: LoginInput): Promise<Authenticated
 
 /** Sign-in: checks credentials, then records the login. Returns null without saying which part was wrong. */
 export async function verifyCredentials(input: LoginInput, ip?: string | null): Promise<AuthenticatedUser | null> {
+  const keys = throttleKeys("login", input.email, { ip });
+  const locked = await lockedMinutes(keys);
+  if (locked !== null) throw new TooManyAttemptsError(locked);
+
   const user = await checkCredentials(input);
-  if (!user) return null;
+  if (!user) {
+    await recordFailure(keys);
+    return null;
+  }
+  await recordSuccess(keys);
 
   await db.$transaction(async (tx) => {
     await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { Suspense } from "react";
 
 import { PosScreen } from "@/app/(app)/pos/pos-screen";
@@ -8,7 +9,7 @@ import { can } from "@/server/auth/permissions";
 import { requirePageAccess } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { getCheckoutSettings } from "@/server/services/invoice.service";
-import { listSellableCategories, quickPickAccessories, resolvePosBranch, searchCatalog } from "@/server/services/pos.service";
+import { listPosStores, listSellableCategories, POS_BRANCH_COOKIE, quickPickAccessories, resolvePosBranch, searchCatalog } from "@/server/services/pos.service";
 
 export const metadata: Metadata = { title: "New sale" };
 
@@ -40,7 +41,10 @@ export default function PosPage() {
 
 async function Content() {
   const ctx = await requirePageAccess("invoice.create");
-  const branch = await resolvePosBranch(ctx);
+  const remembered = (await cookies()).get(POS_BRANCH_COOKIE)?.value;
+  const branch = await resolvePosBranch(ctx, remembered);
+  // Owner in all-branches view picks the selling store on the POS itself.
+  const storeChoices = ctx.role === "OWNER" && ctx.activeBranchId === null ? await listPosStores(ctx) : null;
   const [initialCatalog, quickPicks, categories, settings, deviceModels] = await Promise.all([
     searchCatalog(ctx, { branchId: branch.id }),
     quickPickAccessories(ctx, branch.id),
@@ -55,6 +59,7 @@ async function Content() {
       key={branch.id}
       branch={branch}
       isOwner={ctx.role === "OWNER"}
+      storeChoices={storeChoices}
       categories={categories}
       initialCatalog={initialCatalog}
       quickPicks={quickPicks}

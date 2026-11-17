@@ -4,7 +4,7 @@ import { Loader2, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
-import { completeSale, searchPosCatalog } from "@/app/(app)/pos/actions";
+import { choosePosBranch, completeSale, searchPosCatalog } from "@/app/(app)/pos/actions";
 import { type CartAccessory, type CartLine, moneyOrZero, newKey, type PaymentRow, type PlanDraft, previewTotals } from "@/app/(app)/pos/cart";
 import { CustomerPicker } from "@/app/(app)/pos/customer-picker";
 import { ApprovalDialog, TradeInDialog } from "@/app/(app)/pos/dialogs";
@@ -16,6 +16,7 @@ import { Money } from "@/components/money";
 import { Segmented } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { STORE } from "@/config/store";
 import { addMonths, type CalendarDate } from "@/lib/dates";
 import { installmentApproval } from "@/lib/installments";
@@ -41,6 +42,7 @@ const freshPlan = (today: CalendarDate): PlanDraft => ({
 export function PosScreen({
   branch,
   isOwner,
+  storeChoices,
   categories,
   initialCatalog,
   quickPicks,
@@ -51,6 +53,8 @@ export function PosScreen({
 }: {
   branch: PosBranch;
   isOwner: boolean;
+  /** Owner in all-branches view: stores to sell from. Null when the rail decides. */
+  storeChoices: PosBranch[] | null;
   categories: string[];
   initialCatalog: PosCatalog;
   quickPicks: PosAccessory[];
@@ -279,10 +283,36 @@ export function PosScreen({
             <h2 id="find-heading" className="text-[26px] leading-8 font-medium tracking-tight">
               Find and add
             </h2>
-            <p className="text-small text-muted-foreground">
-              Selling from {branch.name}
-              {isOwner ? " · pick a branch in the rail to change" : ""}
-            </p>
+            {storeChoices ? (
+              <label className="flex items-center gap-2 text-small text-muted-foreground">
+                Selling from
+                <Select
+                  value={branch.id}
+                  onValueChange={(id) =>
+                    void choosePosBranch(id).then((r) => {
+                      if (r.ok) router.refresh();
+                      else setError(r.error);
+                    })
+                  }
+                >
+                  <SelectTrigger size="sm" aria-label="Store to sell from" className="min-w-36 bg-background text-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {storeChoices.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name} <span className="font-mono text-muted-foreground">· {s.code}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+            ) : (
+              <p className="text-small text-muted-foreground">
+                Selling from {branch.name}
+                {isOwner ? " · pick a branch in the rail to change" : ""}
+              </p>
+            )}
           </div>
           <SearchField ref={searchRef} value={query} onChange={setQuery} onEnter={() => void onSearchEnter()} busy={searching} />
           <nav aria-label="Categories" className="flex flex-wrap gap-2">
