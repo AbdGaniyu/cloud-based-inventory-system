@@ -68,6 +68,9 @@ jobs:
       - name: Migrate
         run: pnpm prisma migrate deploy
 
+      - name: Database safeguards present (triggers, CHECK constraints)
+        run: pnpm db:verify
+
       - name: Unit and integration tests
         run: pnpm test
 

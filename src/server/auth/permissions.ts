@@ -61,6 +61,8 @@ type ActionResources = {
   "branch.viewAll": never;
   "audit.view": { branchId: string | null };
   "settings.view": never;
+  /** NDPA requests: export everything held on a customer, or erase their personal details (owner). */
+  "customer.privacy": never;
   /** Cashing up your own drawer at your branch (everyone who takes money). */
   "cashup.submit": never;
   /** Seeing everyone's cash-ups and expected takings at a branch, and signing them off. */

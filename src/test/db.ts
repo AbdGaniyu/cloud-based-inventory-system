@@ -11,6 +11,7 @@ const APP_TABLES = [
   "recovery_codes",
   "stock_adjustments",
   "cash_ups",
+  "rate_limit_buckets",
   "stock_counts",
   "job_runs",
   "error_events",

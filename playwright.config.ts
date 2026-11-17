@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-import { E2E_BASE_URL, E2E_PORT, e2eDatabaseUrl, loadDotEnv } from "./tests/e2e/e2e-env";
+import { E2E_BASE_URL, E2E_PORT, e2eAppDatabaseUrl, e2eDatabaseUrl, loadDotEnv } from "./tests/e2e/e2e-env";
 
 loadDotEnv();
 
@@ -22,7 +22,8 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 1000 } } }],
   webServer: {
-    command: `pnpm exec tsx tests/e2e/prepare-db.ts && pnpm build && pnpm exec next start -p ${E2E_PORT}`,
+    // prepare-db runs as the owner (DATABASE_URL below); the app is built and served as the least-privilege login.
+    command: `pnpm exec tsx tests/e2e/prepare-db.ts && DATABASE_URL='${e2eAppDatabaseUrl()}' pnpm build && DATABASE_URL='${e2eAppDatabaseUrl()}' pnpm exec next start -p ${E2E_PORT}`,
     url: `${E2E_BASE_URL}/login`,
     timeout: 300_000,
     reuseExistingServer: false,

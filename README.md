@@ -74,6 +74,8 @@ open accounts to another store, cancels its live transfers and keeps its history
 | `DOCUMENT_SIGNING_SECRET` | yes | Signs the expiring PDF links sent to customers |
 | `SETTINGS_ENCRYPTION_KEY` | no | Encrypts provider keys saved in Settings (32 bytes, base64); derived from `AUTH_SECRET` when empty. Changing it makes saved keys unreadable |
 | `SEED_PASSWORD` | no | Password for seeded users (default `GadgetHub!2026`) |
+| `MIGRATION_DATABASE_URL` | prod | Owner login used by migrations, the seed and the db scripts; `DATABASE_URL` is then the app's least-privilege login |
+| `APP_DB_PASSWORD`, `APP_DB_ROLE` | for `db:grant-app` | Password (and name, default `gadgethub_app`) of the app's database login |
 | `REQUIRE_OWNER_2FA` | no | `true`/`false` overrides the default (owners must use two-factor in production) |
 | `ALERT_WEBHOOK_URL`, `ALERT_PHONE` | no | Where operations alerts go (Slack/Discord webhook, SMS); see **Monitoring** |
 | `CLIENT_IP_HEADER`, `TRUSTED_PROXY_COUNT` | no | Where the sign-in rate limiter reads the client IP; nothing needed on Vercel |
@@ -94,6 +96,10 @@ open accounts to another store, cancels its live transfers and keeps its history
 | `pnpm test:e2e` | Playwright checkout smoke test (below) |
 | `pnpm db:seed` · `pnpm db:studio` | Seed sample data · Prisma Studio |
 | `pnpm cron:local [--run all\|<job>]` | Run the scheduled jobs against the dev server |
+| `pnpm user:create-owner "Name" <email>` | First owner on a real store (one-time password) |
+| `pnpm db:grant-app` | Create/refresh the app's least-privilege database login (after each migration) |
+| `pnpm db:verify [url]` | Ledger, stock, numbering and safeguard checks (also run daily by the 07:00 job) |
+| `scripts/backup.sh`, `scripts/restore-drill.sh` | Off-site backup; monthly restore drill with integrity checks |
 | `pnpm user:reset-2fa <email>` | Last resort: turn off someone's two-factor from the server (e.g. the only owner lost their phone and codes) |
 
 A change is done when `pnpm lint && pnpm typecheck && pnpm test` pass.
@@ -169,18 +175,50 @@ A change is done when `pnpm lint && pnpm typecheck && pnpm test` pass.
   at first sign-in; until then they can open nothing but Account security.
 - **Secrets**: provider keys are stored AES-256-GCM encrypted and only ever shown as the last four
   characters; customer document links are HMAC-signed and expire.
+- **Database role**: the app runs as a login that can't alter the schema, disable triggers or delete
+  financial rows (`pnpm db:grant-app`); a test fails if code starts deleting from a table it isn't allowed to.
+- **Public endpoints**: the warranty check and signed document links are rate-limited per IP; links in
+  messages last 30 days (staff can resend), the QR on a printed receipt 180 days.
+- **Privacy**: public notice at `/privacy`; notice recorded per customer; owner export/erasure; old
+  message texts removed automatically.
 - **Seed safety**: `pnpm db:seed` refuses to run in production or on a database with real users.
 
 ## Deploying
 
-1. Provision Postgres (any managed provider) and set `DATABASE_URL`.
-2. Set `APP_URL` to the public https URL and the secrets above; run `pnpm prisma migrate deploy`.
-3. Seed only for a demo (`pnpm db:seed`); for a real store create branches and users in **Settings**.
-4. Vercel: import the repo; `vercel.json` schedules the cron jobs (see **Scheduled jobs**) and Vercel sends
-   `CRON_SECRET` automatically. Elsewhere, call the four `/api/cron/*` routes on the same schedule with
-   `Authorization: Bearer $CRON_SECRET`.
-5. Register the WhatsApp templates and delivery webhooks below, then pick providers and enter keys in
-   **Settings → Messaging providers** and send a test message.
+Do these in order; each step says why.
+
+1. **Database.** Managed Postgres with automatic backups **and point-in-time recovery** (Neon, Supabase,
+   RDS…), in or near Lagos/Europe. Create the database with an owner login; put it in
+   `MIGRATION_DATABASE_URL` and run `pnpm prisma migrate deploy`.
+2. **App login with least privilege.** `APP_DB_PASSWORD=<long random> pnpm db:grant-app` creates
+   `gadgethub_app`, which can read and write rows but can't change the schema, drop or disable the audit,
+   stock and cash-up triggers, or delete financial records. Set the app's `DATABASE_URL` to that login.
+   Re-run `pnpm db:grant-app` after every `prisma migrate deploy` (CI's smoke test runs the app this way).
+3. **Secrets.** `APP_URL` (https), `AUTH_SECRET`, `CRON_SECRET`, `DOCUMENT_SIGNING_SECRET`,
+   `SETTINGS_ENCRYPTION_KEY` (each `openssl rand -base64 32`), in the host's secret store, never in git.
+4. **First owner.** `pnpm user:create-owner "Full Name" email` prints a one-time password. Sign in,
+   choose a password, set up two-factor (required for owners in production) and save the recovery codes.
+   Then create branches and staff in **Settings**. (Seed only for a demo; it refuses real databases.)
+5. **Hosting and jobs.** Vercel: import the repo; `vercel.json` schedules the jobs and Vercel sends
+   `CRON_SECRET`. The 15-minute job needs the Pro plan (see **Monitoring**). Elsewhere, call the four
+   `/api/cron/*` routes on the same schedule with `Authorization: Bearer $CRON_SECRET`.
+6. **Edge protection.** Add a rate-limit rule at the edge (Vercel Firewall or Cloudflare) for `/w/*`,
+   `/api/pdf/*` and `/api/auth/*`; the app also limits these per IP, but the edge stops floods before
+   they cost compute. Set `CLIENT_IP_HEADER` / `TRUSTED_PROXY_COUNT` if you're not on Vercel.
+7. **Messages, for real.** Register the WhatsApp templates and delivery webhooks below, enter provider
+   keys in **Settings → Messaging providers**, then on a staff phone: send a test message on each
+   channel, make a small sale to yourself (receipt + warranty arrive, links open), record a repayment
+   (confirmation arrives), and check delivery ticks reach the Notifications page.
+8. **Alerts and uptime.** `ALERT_WEBHOOK_URL` and/or `ALERT_PHONE`, then **Settings → System → Send test
+   alert**. Point an uptime monitor at `/api/health`.
+9. **Backups you control.** Schedule `scripts/backup.sh` daily to storage outside the host (30 daily +
+   12 monthly), and once a month run `scripts/restore-drill.sh <file>`: it restores into a scratch
+   database and runs `pnpm db:verify` (ledger totals, stock, numbering, triggers and constraints).
+   Write down how long a restore took; that's your recovery time.
+10. **Privacy (NDPA 2023).** Have a lawyer review `/privacy` (store contact details, retention periods);
+    register with the NDPC if your volume of customers requires it. Staff record that they gave the
+    notice when adding a customer; owners export or erase a customer's data from their profile.
+    Message texts are removed after `privacy.messageRetentionDays` (default 365).
 
 ## Customer messages
 

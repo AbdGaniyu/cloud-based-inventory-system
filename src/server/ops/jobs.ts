@@ -5,6 +5,8 @@ import { db } from "@/server/db";
 import { sendOpsAlert } from "@/server/ops/alerts";
 import { reportError } from "@/server/ops/errors";
 import { logEvent } from "@/server/ops/log";
+import { redactOldMessages } from "@/server/services/privacy.service";
+import { pruneRateLimits } from "@/server/services/rate-limit.service";
 
 /**
  * Scheduled-job bookkeeping: every run is a JobRun row, a failure alerts, and a job that stops
@@ -76,7 +78,7 @@ const DAY_MS = 86_400_000;
  * Run by the 15-minute job: alerts on stale or failing jobs and on a burst of failed messages,
  * then prunes old operations history.
  */
-export async function checkOpsHealth(now: Date = new Date()): Promise<{ staleJobs: string[]; failedMessagesLastHour: number; pruned: number }> {
+export async function checkOpsHealth(now: Date = new Date()): Promise<{ staleJobs: string[]; failedMessagesLastHour: number; pruned: number; messagesRedacted: number }> {
   const jobs = await jobHealth(now);
   // A job that has never run only counts once scheduling has been live longer than its window
   // (otherwise every fresh deploy would alert before the first morning run).
@@ -100,8 +102,10 @@ export async function checkOpsHealth(now: Date = new Date()): Promise<{ staleJob
     db.errorEvent.deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - ERROR_RETENTION_DAYS * DAY_MS) } } }),
     db.jobRun.deleteMany({ where: { startedAt: { lt: new Date(now.getTime() - JOB_RUN_RETENTION_DAYS * DAY_MS) } } }),
   ]);
+  const buckets = await pruneRateLimits(now);
+  const redacted = await redactOldMessages(now);
   if (unhealthy.length) logEvent("warn", "unhealthy jobs", { jobs: unhealthy.map((j) => `${j.job}:${j.status}`) });
-  return { staleJobs: unhealthy.map((j) => j.job), failedMessagesLastHour, pruned: errors.count + runs.count };
+  return { staleJobs: unhealthy.map((j) => j.job), failedMessagesLastHour, pruned: errors.count + runs.count + buckets, messagesRedacted: redacted };
 }
 
 export type HealthReport = { status: "ok" | "degraded" | "down"; database: "ok" | "down"; jobs: Record<string, JobStatus>; time: string; version: string | null };

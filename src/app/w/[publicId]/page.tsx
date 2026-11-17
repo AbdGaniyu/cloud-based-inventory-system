@@ -1,5 +1,6 @@
 import { CheckCircle2, ShieldOff, ShieldQuestion, TimerOff } from "lucide-react";
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { connection } from "next/server";
 import { Suspense } from "react";
 
@@ -8,7 +9,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { STORE } from "@/config/store";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { cn } from "@/lib/utils";
+import { clientIp } from "@/server/client-ip";
 import { getPublicWarranty } from "@/server/services/document.service";
+import { hitRateLimit } from "@/server/services/rate-limit.service";
 
 export const metadata: Metadata = { title: "Warranty check", robots: { index: false, follow: false } };
 
@@ -33,7 +36,10 @@ export default function WarrantyCheckPage({ params }: PageProps<"/w/[publicId]">
           <a href={`mailto:${STORE.contact.email}`} className="underline-offset-4 hover:underline">
             {STORE.contact.email}
           </a>
-          .
+          .{" "}
+          <a href="/privacy" className="underline-offset-4 hover:underline">
+            How we use your details
+          </a>
         </p>
       </div>
     </main>
@@ -44,6 +50,16 @@ async function WarrantyCard({ params }: { params: PageProps<"/w/[publicId]">["pa
   const { publicId } = await params;
   // Status depends on today's date: always render at request time.
   await connection();
+  const decision = await hitRateLimit("warranty", clientIp(await headers()));
+  if (!decision.allowed) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-6 text-center">
+        <ShieldQuestion aria-hidden className="mx-auto size-10 text-muted-foreground" />
+        <h1 className="mt-3 text-h2">Too many checks</h1>
+        <p className="mt-1 text-body text-muted-foreground">Please wait a minute, then scan the QR code again.</p>
+      </div>
+    );
+  }
   const warranty = await getPublicWarranty(publicId);
 
   if (!warranty) {

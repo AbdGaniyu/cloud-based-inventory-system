@@ -22,13 +22,15 @@ export async function searchCustomers(ctx: Ctx, query: string): Promise<Customer
   assertCan(ctx, "customer.view");
   const q = query.trim();
   if (q.length < 2) {
-    return db.customer.findMany({ select: OPTION_SELECT, orderBy: { updatedAt: "desc" }, take: SEARCH_LIMIT });
+    return db.customer.findMany({ where: { erasedAt: null }, select: OPTION_SELECT, orderBy: { updatedAt: "desc" }, take: SEARCH_LIMIT });
   }
   const digits = q.replace(/\D/g, "");
   // "0803…" is stored as "+234803…": search on the national number without the leading 0.
   const phoneFragment = digits.startsWith("0") ? digits.slice(1) : digits;
   return db.customer.findMany({
     where: {
+      // Erased customers can't be picked for a sale (and their placeholder "number" must not match digits).
+      erasedAt: null,
       OR: [
         { name: { contains: q, mode: "insensitive" } },
         ...(phoneFragment.length >= 3 ? [{ phoneE164: { contains: phoneFragment } }] : []),
@@ -58,6 +60,8 @@ export async function createCustomer(ctx: Ctx, input: QuickCustomerInput): Promi
         smsOptIn: input.smsOptIn,
         notes: input.notes ?? null,
         createdById: ctx.userId,
+        noticeGivenAt: new Date(),
+        noticeGivenById: ctx.userId,
       },
       select: OPTION_SELECT,
     });
@@ -152,6 +156,8 @@ export type CustomerProfile = {
   whatsappOptIn: boolean;
   smsOptIn: boolean;
   createdAt: string;
+  /** NDPA: privacy notice record, and whether the personal details were erased on request. */
+  privacy: { noticeGivenAt: string | null; noticeGivenByName: string | null; erasedAt: string | null };
   lifetimeSpend: string;
   outstanding: string;
   plans: {
@@ -180,6 +186,7 @@ export async function getCustomerProfile(ctx: Ctx, id: string, now: Date = new D
   const customer = await db.customer.findUnique({
     where: { id },
     include: {
+      noticeGivenBy: { select: { name: true } },
       invoices: {
         include: {
           branch: { select: { name: true } },
@@ -217,6 +224,7 @@ export async function getCustomerProfile(ctx: Ctx, id: string, now: Date = new D
     whatsappOptIn: customer.whatsappOptIn,
     smsOptIn: customer.smsOptIn,
     createdAt: customer.createdAt.toISOString(),
+    privacy: { noticeGivenAt: customer.noticeGivenAt?.toISOString() ?? null, noticeGivenByName: customer.noticeGivenBy?.name ?? null, erasedAt: customer.erasedAt?.toISOString() ?? null },
     lifetimeSpend: money(spend._sum.total ?? 0).minus(spend._sum.returnedAmount ?? 0).toFixed(2),
     outstanding: money(owed._sum.balance ?? 0).toFixed(2),
     plans: live

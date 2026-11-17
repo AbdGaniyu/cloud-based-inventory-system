@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { PreferencesForm } from "@/app/(app)/customers/[id]/preferences-form";
+import { PrivacyPanel } from "@/app/(app)/customers/[id]/privacy-panel";
 import { customerMessages } from "@/app/(app)/ledger/actions";
 import { IdentifierChip } from "@/components/identifier-chip";
 import { RecordPaymentButton } from "@/components/ledger/record-payment-sheet";
@@ -152,7 +153,24 @@ async function Content({ params }: { params: PageProps<"/customers/[id]">["param
         </div>
 
         <aside className="flex flex-col gap-4 xl:sticky xl:top-6">
-          <PreferencesForm customerId={customer.id} whatsappOptIn={customer.whatsappOptIn} smsOptIn={customer.smsOptIn} notes={customer.notes} canEdit={can(ctx, "customer.create")} />
+          {customer.privacy.erasedAt ? (
+            <section className="rounded-xl border border-border bg-card p-5 text-body">
+              <p className="font-medium">Personal details erased</p>
+              <p className="text-small text-muted-foreground">On request, {new Date(customer.privacy.erasedAt).toLocaleDateString("en-GB", { timeZone: "Africa/Lagos" })}. Their purchases are kept for tax records; no messages go out.</p>
+            </section>
+          ) : (
+            <>
+              <PreferencesForm customerId={customer.id} whatsappOptIn={customer.whatsappOptIn} smsOptIn={customer.smsOptIn} notes={customer.notes} canEdit={can(ctx, "customer.create")} />
+              <PrivacyPanel
+                customerId={customer.id}
+                noticeGivenAt={customer.privacy.noticeGivenAt}
+                noticeGivenByName={customer.privacy.noticeGivenByName}
+                canRecord={can(ctx, "customer.create")}
+                canManage={can(ctx, "customer.privacy")}
+                owes={Number(customer.outstanding) > 0}
+              />
+            </>
+          )}
           <section aria-labelledby="warranties-heading" className="rounded-xl border border-border bg-card p-5">
             <h2 id="warranties-heading" className="mb-3 text-h3">Warranties</h2>
             {customer.warranties.length === 0 ? (

@@ -26,6 +26,7 @@ function NewCustomerForm({ initialQuery, onCreated, onCancel }: { initialQuery: 
       name: looksLikePhone ? "" : initialQuery,
       phone: looksLikePhone ? initialQuery : "",
       email: "",
+      noticeGiven: false,
       whatsappOptIn: true,
       smsOptIn: true,
     },
@@ -77,6 +78,20 @@ function NewCustomerForm({ initialQuery, onCreated, onCancel }: { initialQuery: 
           <input type="checkbox" className="size-4 accent-primary" {...form.register("smsOptIn")} /> SMS
         </label>
       </fieldset>
+      <Field data-invalid={Boolean(errors.noticeGiven)}>
+        <label className="flex items-start gap-2 text-small">
+          <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-primary" aria-invalid={Boolean(errors.noticeGiven)} {...form.register("noticeGiven")} />
+          <span>
+            I told the customer we keep their name and number for receipts, warranty and payment reminders, and that they can ask to see or
+            remove them (
+            <a href="/privacy" target="_blank" rel="noopener" className="underline underline-offset-2">
+              privacy notice
+            </a>
+            ).
+          </span>
+        </label>
+        {errors.noticeGiven && <FieldError errors={[errors.noticeGiven]} />}
+      </Field>
       <div className="flex gap-2">
         <Button type="submit" disabled={form.formState.isSubmitting}>
           {form.formState.isSubmitting && <Loader2 aria-hidden className="animate-spin" />}

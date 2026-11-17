@@ -9,8 +9,13 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  */
 export type DocumentKind = "invoice" | "warranty";
 
-/** How long a link in a message or on a receipt stays valid. */
-export const DOCUMENT_LINK_TTL_DAYS = 180;
+/**
+ * How long a link sent in a message stays valid. Documents carry the customer's name, phone and
+ * IMEIs, so links don't live forever; staff can resend a fresh one from the invoice at any time.
+ */
+export const DOCUMENT_LINK_TTL_DAYS = 30;
+/** The QR code printed on a paper receipt can't be resent, so it lasts longer. */
+export const PRINTED_LINK_TTL_DAYS = 180;
 const SECONDS_PER_DAY = 86_400;
 
 function secret(): string {

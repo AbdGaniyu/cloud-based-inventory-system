@@ -8,6 +8,7 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    url: env("DATABASE_URL"),
+    // Migrations need the owner login; the running app can use a least-privilege one (pnpm db:grant-app).
+    url: process.env.MIGRATION_DATABASE_URL ?? env("DATABASE_URL"),
   },
 });

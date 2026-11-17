@@ -18,6 +18,8 @@ export const quickCustomerSchema = z.object({
   whatsappOptIn: z.boolean(),
   smsOptIn: z.boolean(),
   notes: optionalText(500),
+  /** NDPA: staff confirm the customer was told how their details are used (see /privacy). */
+  noticeGiven: z.boolean().refine((v) => v, "Tell the customer how we use their details, then tick this"),
 });
 
 export type QuickCustomerInput = z.infer<typeof quickCustomerSchema>;

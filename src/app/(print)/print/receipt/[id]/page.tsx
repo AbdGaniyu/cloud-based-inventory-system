@@ -10,7 +10,7 @@ import { STORE } from "@/config/store";
 import { formatMoney } from "@/lib/money";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { requirePageAccess } from "@/server/auth/session";
-import { signedDocumentUrl } from "@/server/documents/signed-url";
+import { PRINTED_LINK_TTL_DAYS, signedDocumentUrl } from "@/server/documents/signed-url";
 import { NotFoundError } from "@/server/errors";
 import { getInvoiceDocument } from "@/server/services/document.service";
 
@@ -47,7 +47,7 @@ async function Receipt({ params, searchParams }: { params: PageProps<"/print/rec
     if (error instanceof NotFoundError) notFound();
     throw error;
   });
-  const qr = await QRCode.toString(signedDocumentUrl("invoice", invoice.id), { type: "svg", margin: 0, errorCorrectionLevel: "M" });
+  const qr = await QRCode.toString(signedDocumentUrl("invoice", invoice.id, { ttlDays: PRINTED_LINK_TTL_DAYS }), { type: "svg", margin: 0, errorCorrectionLevel: "M" });
   const balanceDue = Number(invoice.balance) > 0;
 
   return (
@@ -111,6 +111,7 @@ async function Receipt({ params, searchParams }: { params: PageProps<"/print/rec
           {formatPhoneDisplay(STORE.contact.phone)} · {STORE.contact.email}
         </p>
         <p className="mt-1 text-center text-[11px] font-semibold">Thank you for shopping with us</p>
+        <p className="mt-1 text-center text-[9px]">How we use your details: {(process.env.APP_URL ?? "").replace(/^https?:\/\//, "").replace(/\/$/, "")}/privacy</p>
       </article>
     </div>
   );

@@ -17,6 +17,9 @@
     "postinstall": "prisma generate",
     "cron:local": "tsx --env-file-if-exists=.env scripts/cron-local.ts",
     "user:reset-2fa": "tsx --env-file-if-exists=.env scripts/reset-two-factor.ts",
+    "user:create-owner": "tsx --env-file-if-exists=.env scripts/create-owner.ts",
+    "db:grant-app": "tsx --env-file-if-exists=.env scripts/db-grant-app-role.ts",
+    "db:verify": "tsx --env-file-if-exists=.env scripts/verify-ledger.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

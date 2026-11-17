@@ -16,7 +16,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts", "prisma/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "prisma/**/*.test.ts", "scripts/**/*.test.ts"],
     globalSetup: ["src/test/global-setup.ts"],
     // Integration tests share one database; run files one at a time.
     fileParallelism: false,

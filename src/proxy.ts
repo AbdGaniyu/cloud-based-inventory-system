@@ -27,7 +27,7 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     // Everything except: auth, cron, webhook, PDF and health APIs (each checks its own access — PDFs accept signed links),
-    // public warranty pages, Next internals, static files.
-    "/((?!api/auth|api/cron|api/webhooks|api/pdf|api/health|w/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    // public warranty pages and privacy notice, Next internals, static files.
+    "/((?!api/auth|api/cron|api/webhooks|api/pdf|api/health|w/|privacy$|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

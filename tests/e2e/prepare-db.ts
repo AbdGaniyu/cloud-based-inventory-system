@@ -2,11 +2,12 @@ import { execFileSync } from "node:child_process";
 
 import { Client } from "pg";
 
-import { e2eDatabaseUrl, loadDotEnv } from "./e2e-env";
+import { grantAppRole } from "../../scripts/db-grant-app-role";
+import { E2E_APP_PASSWORD, E2E_APP_ROLE, e2eDatabaseUrl, loadDotEnv } from "./e2e-env";
 
 /**
- * Recreates the smoke-test database from scratch (migrations + seed) so every run starts with the
- * same stock and ledger. Refuses to touch any database whose name does not end in "_e2e".
+ * Recreates the smoke-test database from scratch (migrations + seed, as the owner) so every run starts
+ * with the same stock and ledger, then grants the least-privilege app login the server runs as. Refuses to touch any database whose name does not end in "_e2e".
  */
 async function main(): Promise<void> {
   loadDotEnv();
@@ -26,6 +27,7 @@ async function main(): Promise<void> {
   const env = { ...process.env, DATABASE_URL: url.toString() };
   execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], { env, stdio: "inherit" });
   execFileSync("pnpm", ["exec", "tsx", "prisma/seed.ts"], { env, stdio: "inherit" });
+  await grantAppRole(url.toString(), E2E_APP_ROLE, E2E_APP_PASSWORD);
 }
 
 main().catch((error: unknown) => {
