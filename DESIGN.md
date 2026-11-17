@@ -4,6 +4,8 @@ Design system and screen specifications for the Gadget Store Multi-Branch Invent
 
 ## 1. Direction
 
+**Visual reference:** the mockups in [`docs/design/mockups/`](docs/design/mockups/) (Overview, POS empty / cart / success, Receivables) are the source of truth for look and feel. Where a mockup and a token below disagree, the mockup wins and the token is updated to match.
+
 A clean, high-contrast, modern SaaS dashboard in the spirit of Linear and Stripe: quiet surfaces, sharp type, dense but calm data, colour used only to carry meaning.
 
 Two modes of use shape every decision:
@@ -35,10 +37,14 @@ Implement as CSS variables in `globals.css` using the shadcn/ui convention, in b
 | `--foreground` | `#09090B` | Primary text, key figures |
 | `--muted-foreground` | `#52525B` | Secondary text, labels |
 | `--subtle-foreground` | `#71717A` | Placeholders, tertiary meta |
-| `--primary` | `#4F46E5` | Primary buttons, active nav, focus ring, links |
-| `--primary-hover` | `#4338CA` | |
+| `--primary` | `#18181B` | Primary buttons ("New sale", "Complete sale"), selected filter chip, chart main series |
+| `--primary-hover` | `#27272A` | |
 | `--primary-foreground` | `#FFFFFF` | |
-| `--accent` | `#EEF2FF` | Selected row, active nav background |
+| `--secondary` | `#F4F4F5` | Secondary filled buttons ("Record payment", "Alerts"), unselected chips |
+| `--secondary-hover` | `#E9E9EB` | |
+| `--accent` | `#F4F4F5` | Selected row, active nav background |
+| `--ring` | `#4F46E5` | Focus ring (indigo stays as the only non-semantic accent) |
+| `--badge` | `#DC2626` | Solid count badges on the branch rail and nav (white text) |
 
 ### 2.2 Colour — dark
 
@@ -52,9 +58,12 @@ Implement as CSS variables in `globals.css` using the shadcn/ui convention, in b
 | `--foreground` | `#FAFAFA` |
 | `--muted-foreground` | `#A1A1AA` |
 | `--subtle-foreground` | `#71717A` |
-| `--primary` | `#818CF8` |
+| `--primary` | `#FAFAFA` |
 | `--primary-foreground` | `#09090B` |
-| `--accent` | `#1E1B4B` |
+| `--secondary` | `#27272A` |
+| `--accent` | `#27272A` |
+| `--ring` | `#818CF8` |
+| `--badge` | `#EF4444` |
 
 ### 2.3 Semantic colour
 
@@ -78,7 +87,11 @@ Dark theme equivalents:
 | Info | `#60A5FA` | `#172554` | `#1E40AF` |
 | Neutral | `#D4D4D8` | `#27272A` | `#3F3F46` |
 
-Also added for dark: `--primary-hover` `#A5B4FC`; accent text (active nav label) `#3730A3` light / `#C7D2FE` dark.
+Also for dark: `--primary-hover` `#E4E4E7`, `--secondary-hover` `#3F3F46`.
+
+### 2.3a Branch identity
+
+Each branch gets a solid colour used only for its rail tile and code chip (white text, ≥4.5:1). Assigned in branch order (stores by name, then warehouses): `#4F46E5` indigo · `#15803D` green · `#B45309` amber · `#0E7490` teal · `#BE185D` pink · `#52525B` zinc. "All branches" is `--primary`.
 
 All text/background pairs must meet WCAG AA (4.5:1). Never signal status by colour alone — badges always carry a text label.
 
@@ -143,7 +156,7 @@ Letter-spacing −0.01em on H1 and Display. Sentence case for all headings, butt
 ### 2.7 Spacing, radius, elevation
 
 - **Spacing scale (px):** 4, 8, 12, 16, 20, 24, 32, 40, 48, 64. Page padding 24 (desktop), 16 (tablet). Card padding 20. Gap between cards 16.
-- **Radius:** 6 inputs and buttons, 8 cards and popovers, 12 dialogs and sheets, full for badges and avatars.
+- **Radius:** 6 inputs and buttons, 8 popovers and rail tiles, 12 cards, dialogs and sheets, full for badges, chips and avatars.
 - **Borders over shadows.** Cards are a 1px border with no shadow. Shadows only on floating layers: popover `0 4px 12px rgba(0,0,0,.08)`, dialog `0 16px 40px rgba(0,0,0,.16)`.
 - **Focus:** 2px `--primary` ring with 2px offset on every interactive element. Never remove it.
 - **Motion:** 150ms ease-out for hover, popover and sheet transitions. No decorative animation. Respect `prefers-reduced-motion`.
@@ -151,19 +164,23 @@ Letter-spacing −0.01em on H1 and Display. Sentence case for all headings, butt
 ## 3. Layout shell
 
 ```
-┌──────────┬──────────────────────────────────────────────┐
-│ Sidebar  │ Top bar: [Branch switcher]  [⌘K search]  [🔔] [User] │
-│ 240px    ├──────────────────────────────────────────────┤
-│          │ Page header: Title · description · actions    │
-│ nav      │ Content (max-width 1440, fluid)               │
-└──────────┴──────────────────────────────────────────────┘
+┌────┬────────────┬──────────────────────────────────────────────────────┐
+│Rail│ Sidebar    │ Top bar: Page title  [Search ⌘K]  [Alerts n]  [+ New sale] │
+│56px│ 186px      ├──────────────────────────────────────────────────────┤
+│ALL │ Store name │ Scope strip (All branches only)                       │
+│IK  │ scope line │ Content (sections on --surface bands, white cards)    │
+│LK  │ nav groups │                                                        │
+│ ⚙  │ user, role │                                                        │
+│ OA │            │                                                        │
+└────┴────────────┴──────────────────────────────────────────────────────┘
 ```
 
-- **Sidebar:** 240px, `--surface`, collapsible to a 64px icon rail (default collapsed below 1280px). Groups: *Sell* (POS, Invoices, Customers) · *Stock* (Inventory, Intake, Transfers) · *Money* (Receivables, Payables, Suppliers, Aging) · *Admin* (Notifications, Audit, Settings). Items the role cannot use are not rendered.
-- **Top bar:** 56px, sticky, bottom border.
-- **Branch switcher** (top-left of the top bar): a combobox showing a coloured dot, branch name and code. Owners see "All branches" at the top with a globe icon, then each branch. Managers and cashiers see a static, non-interactive chip with their branch and a lock icon. When "All branches" is active, show a thin Info-tinted strip under the top bar: "Viewing consolidated data across all branches".
+- **Branch rail** (far left, 56px, white with a right hairline): one 36px rounded tile per branch in its identity colour with a two-letter label, plus a black "ALL" tile on top for owners. The active tile has a 2px foreground ring with a 2px gap. A solid `--badge` count sits on each tile's top-right corner (that branch's open alerts). Managers and cashiers see only their own tile, not clickable, with a lock tooltip. Bottom: display preferences (theme, collapse sidebar) and the account avatar (name, role, sign out).
+- **Sidebar** (186px, collapsible to a 56px icon column; default collapsed below 1280px): store name and scope line ("All branches · ALL" / "Ikeja · IKJ") in a header the height of the top bar; then *Overview*, *Sell* (POS, Invoices, Customers), *Stock* (Inventory, Intake, Transfers), *Money* (Receivables, Payables, Suppliers, Aging), *Admin* (Notifications, Audit, Settings), groups separated by hairlines with caption labels. Active item: `--accent` fill, medium weight. Trailing counts: neutral pill (totals, e.g. invoices), info pill (work in progress, e.g. open transfers), solid `--badge` (needs attention, e.g. overdue accounts, failed messages). Footer: user name and role. Items the role cannot use are not rendered.
+- **Top bar** (60px): the page title is the page's H1 (26px, medium), followed by the search field ("Search invoice, phone or IMEI", ⌘K), the **Alerts** button (secondary fill, count chip) and the primary **+ New sale** button (hidden on the POS screen and for roles that cannot sell). The branch switcher lives in the rail, not here.
+- **Scope strip:** when "All branches" is active, an Info-tinted strip under the top bar: "● Viewing consolidated data across all branches".
+- **Content:** summary sections (KPIs, ledger summary) sit on a full-width `--surface` band separated by vertical hairlines; detail content follows on white. Cards are 12px radius with a 1px border.
 - **Command palette (⌘K / Ctrl-K):** jump to an invoice number, customer phone, IMEI or page.
-- **Notifications bell:** low-stock, aging, overdue and failed-message alerts with counts.
 
 **Breakpoints:** `md` 768, `lg` 1024, `xl` 1280, `2xl` 1536. Target devices are tablet landscape and up. Below 768px, show the app in a single column with tables collapsing to stacked cards; full phone optimisation is not a v1 goal.
 

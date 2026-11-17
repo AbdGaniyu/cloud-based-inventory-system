@@ -1,12 +1,12 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { Package, Search, Smartphone } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 
+import { paletteSearch } from "@/app/(app)/search-actions";
 import type { NavGroup } from "@/components/shell/nav-config";
 import { NAV_ICONS } from "@/components/shell/nav-icons";
-import { Button } from "@/components/ui/button";
 import {
   Command,
   CommandDialog,
@@ -16,11 +16,18 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import type { StockSearchResult } from "@/server/services/inventory.service";
 
-/** ⌘K / Ctrl-K palette. Page jumps now; invoice, phone and IMEI lookup are added with their services. */
+const EMPTY: StockSearchResult = { units: [], products: [] };
+const SEARCH_DEBOUNCE_MS = 200;
+
+/** ⌘K / Ctrl-K palette: pages, plus IMEI / serial / SKU lookup. */
 export function CommandMenu({ nav }: { nav: NavGroup[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<StockSearchResult>(EMPTY);
+  const [searching, startSearch] = useTransition();
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -33,41 +40,101 @@ export function CommandMenu({ nav }: { nav: NavGroup[] }) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) return;
+    const timer = setTimeout(() => {
+      startSearch(async () => {
+        const result = await paletteSearch(q);
+        setResults(result.ok ? result.data : EMPTY);
+      });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  function changeOpen(value: boolean) {
+    setOpen(value);
+    if (!value) {
+      setQuery("");
+      setResults(EMPTY);
+    }
+  }
+
   function go(href: string) {
-    setOpen(false);
+    changeOpen(false);
     router.push(href);
   }
 
+  const q = query.trim().toLowerCase();
+  const pages = nav
+    .flatMap((g) => g.items)
+    .filter((item) => !q || item.label.toLowerCase().includes(q) || (item.title ?? "").toLowerCase().includes(q));
+  const showRemote = q.length >= 2;
+
   return (
     <>
-      <Button
-        variant="outline"
-        className="w-56 justify-start gap-2 font-normal text-subtle-foreground max-lg:w-9 max-lg:justify-center max-lg:px-0"
+      <button
+        type="button"
         onClick={() => setOpen(true)}
-        aria-label="Search and jump to (Ctrl K)"
+        aria-label="Search invoice, phone or IMEI (Ctrl K)"
+        className="flex h-9 w-[300px] items-center gap-2 rounded-lg border border-border bg-background px-3 text-body text-subtle-foreground transition-colors duration-150 hover:border-border-strong max-xl:w-9 max-xl:justify-center max-xl:px-0"
       >
-        <Search aria-hidden className="size-4" />
-        <span className="max-lg:hidden">Search…</span>
-        <kbd className="ml-auto rounded-sm border border-border bg-surface px-1.5 font-mono text-caption max-lg:hidden">⌘K</kbd>
-      </Button>
-      <CommandDialog open={open} onOpenChange={setOpen} title="Search" description="Jump to a page">
-        <Command>
-          <CommandInput placeholder="Jump to a page…" />
+        <Search aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        <span className="truncate max-xl:hidden">Search invoice, phone or IMEI</span>
+        <kbd className="ml-auto rounded-md border border-border bg-surface px-1.5 py-0.5 font-sans text-[11px] text-muted-foreground max-xl:hidden">
+          ⌘K
+        </kbd>
+      </button>
+      <CommandDialog open={open} onOpenChange={changeOpen} title="Search" description="Search stock or jump to a page">
+        <Command shouldFilter={false}>
+          <CommandInput placeholder="IMEI, serial, SKU, product or page…" value={query} onValueChange={setQuery} />
           <CommandList>
-            <CommandEmpty>No matches.</CommandEmpty>
-            {nav.map((group) => (
-              <CommandGroup key={group.label ?? "home"} heading={group.label ?? "General"}>
-                {group.items.map((item) => {
+            <CommandEmpty>
+              {showRemote && searching
+                ? "Searching…"
+                : "No matches. Invoice and phone search arrive with the invoices and customers screens."}
+            </CommandEmpty>
+            {showRemote && results.units.length > 0 && (
+              <CommandGroup heading="Devices">
+                {results.units.map((u) => (
+                  <CommandItem key={u.id} value={`unit-${u.id}`} onSelect={() => go(`/inventory?unit=${u.id}`)}>
+                    <Smartphone aria-hidden className="size-4" />
+                    <span className="truncate">{u.productName}</span>
+                    <span className="ml-auto font-mono text-small text-muted-foreground">
+                      {u.identifier} · {u.branchCode}
+                    </span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {showRemote && results.products.length > 0 && (
+              <CommandGroup heading="Products">
+                {results.products.map((p) => (
+                  <CommandItem
+                    key={p.id}
+                    value={`product-${p.id}`}
+                    onSelect={() => go(`/inventory?tab=products&q=${encodeURIComponent(p.sku)}`)}
+                  >
+                    <Package aria-hidden className="size-4" />
+                    <span className="truncate">{p.name}</span>
+                    <span className="ml-auto font-mono text-small text-muted-foreground">{p.sku}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {pages.length > 0 && (
+              <CommandGroup heading="Pages">
+                {pages.map((item) => {
                   const Icon = NAV_ICONS[item.icon];
                   return (
-                    <CommandItem key={item.href} value={`${group.label ?? ""} ${item.label}`} onSelect={() => go(item.href)}>
+                    <CommandItem key={item.href} value={`page-${item.href}`} onSelect={() => go(item.href)}>
                       <Icon aria-hidden className="size-4" />
-                      {item.label}
+                      {item.title ?? item.label}
                     </CommandItem>
                   );
                 })}
               </CommandGroup>
-            ))}
+            )}
           </CommandList>
         </Command>
       </CommandDialog>

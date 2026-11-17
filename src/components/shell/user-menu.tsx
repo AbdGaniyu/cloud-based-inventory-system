@@ -1,11 +1,10 @@
 "use client";
 
-import { LogOut, Moon, Sun } from "lucide-react";
+import { LogOut, Moon, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sun } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
+import { useShell } from "@/components/shell/shell-provider";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,10 +13,11 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-function initials(name: string): string {
+export function initials(name: string): string {
   return name
     .split(/\s+/)
     .filter(Boolean)
@@ -26,27 +26,19 @@ function initials(name: string): string {
     .join("");
 }
 
-export function UserMenu({ name, email, roleLabel, branchLabel }: { name: string; email: string; roleLabel: string; branchLabel: string }) {
+/** Sliders button in the rail: theme and sidebar collapse. */
+export function PreferencesMenu() {
   const { theme, setTheme } = useTheme();
-
+  const { collapsed, toggle } = useShell();
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="rounded-full" aria-label={`Account menu for ${name}`}>
-          <Avatar className="size-8">
-            <AvatarFallback className="bg-accent text-small font-medium text-accent-foreground">{initials(name)}</AvatarFallback>
-          </Avatar>
-        </Button>
+      <DropdownMenuTrigger
+        className="flex size-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground"
+        aria-label="Display preferences"
+      >
+        <SlidersHorizontal aria-hidden className="size-5" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64 shadow-popover">
-        <DropdownMenuLabel className="flex flex-col gap-0.5 font-normal">
-          <span className="text-body font-medium text-foreground">{name}</span>
-          <span className="truncate text-small text-muted-foreground">{email}</span>
-          <span className="text-small text-muted-foreground">
-            {roleLabel} · {branchLabel}
-          </span>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
+      <DropdownMenuContent side="right" align="end" className="w-56 shadow-popover">
         <DropdownMenuLabel className="text-caption uppercase text-subtle-foreground">Theme</DropdownMenuLabel>
         <DropdownMenuRadioGroup value={theme ?? "light"} onValueChange={setTheme}>
           <DropdownMenuRadioItem value="light">
@@ -56,6 +48,35 @@ export function UserMenu({ name, email, roleLabel, branchLabel }: { name: string
             <Moon aria-hidden className="size-4" /> Dark
           </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={toggle}>
+          {collapsed ? <PanelLeftOpen aria-hidden className="size-4" /> : <PanelLeftClose aria-hidden className="size-4" />}
+          {collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          <DropdownMenuShortcut>⌘B</DropdownMenuShortcut>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** Avatar button in the rail: who is signed in, and sign out. */
+export function AccountMenu({ name, email, roleLabel, branchLabel }: { name: string; email: string; roleLabel: string; branchLabel: string }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className="flex size-9 items-center justify-center rounded-full border border-border bg-surface text-small font-semibold text-foreground hover:border-border-strong"
+        aria-label={`Account menu for ${name}`}
+      >
+        {initials(name)}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="right" align="end" className="w-64 shadow-popover">
+        <DropdownMenuLabel className="flex flex-col gap-0.5 font-normal">
+          <span className="text-body font-medium text-foreground">{name}</span>
+          <span className="truncate text-small text-muted-foreground">{email}</span>
+          <span className="text-small text-muted-foreground">
+            {roleLabel} · {branchLabel}
+          </span>
+        </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => void signOut({ callbackUrl: "/login" })}>
           <LogOut aria-hidden className="size-4" /> Sign out

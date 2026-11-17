@@ -1,45 +1,37 @@
-import { Bell, Globe } from "lucide-react";
+"use client";
+
+import { Plus } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
-import { BranchSwitcher, type SwitcherBranch } from "@/components/branch/BranchSwitcher";
+import { AlertsMenu } from "@/components/shell/alerts-menu";
 import { CommandMenu } from "@/components/shell/command-menu";
-import type { NavGroup } from "@/components/shell/nav-config";
-import { UserMenu } from "@/components/shell/user-menu";
+import { matchNavItem, type NavGroup } from "@/components/shell/nav-config";
 import { Button } from "@/components/ui/button";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import type { AlertBreakdown } from "@/server/services/shell.service";
 
-export function TopBar(props: {
-  nav: NavGroup[];
-  branches: SwitcherBranch[];
-  activeBranchId: string | null;
-  canSwitch: boolean;
-  user: { name: string; email: string; roleLabel: string; branchLabel: string };
-}) {
-  const allBranches = props.canSwitch && props.activeBranchId === null;
+/** Page title (the page's H1), search, alerts and the primary "New sale" action (DESIGN.md §3). */
+export function TopBar({ nav, alerts }: { nav: NavGroup[]; alerts: AlertBreakdown }) {
+  const pathname = usePathname();
+  const item = matchNavItem(nav, pathname);
+  const canSell = nav.some((g) => g.items.some((i) => i.href === "/pos"));
+  const onPos = pathname === "/pos" || pathname.startsWith("/pos/");
+
   return (
-    <div className="sticky top-0 z-20 bg-background">
-      <header className="flex h-14 items-center gap-3 border-b border-border px-4 lg:px-6">
-        <SidebarTrigger aria-label="Toggle sidebar" />
-        <BranchSwitcher branches={props.branches} activeBranchId={props.activeBranchId} canSwitch={props.canSwitch} />
-        <div className="ml-auto flex items-center gap-2">
-          <CommandMenu nav={props.nav} />
-          <Button variant="ghost" size="icon" asChild>
-            <Link href="/notifications" aria-label="Notifications and alerts">
-              <Bell aria-hidden className="size-4" />
+    <header className="flex h-[60px] shrink-0 items-center gap-5 border-b border-border bg-background px-6">
+      <h1 className="shrink-0 text-h1 text-foreground">{item?.title ?? item?.label ?? ""}</h1>
+      <CommandMenu nav={nav} />
+      <div className="flex items-center gap-2">
+        <AlertsMenu alerts={alerts} />
+        {canSell && !onPos && (
+          <Button asChild>
+            <Link href="/pos">
+              <Plus aria-hidden data-icon="inline-start" />
+              New sale
             </Link>
           </Button>
-          <UserMenu {...props.user} />
-        </div>
-      </header>
-      {allBranches && (
-        <div
-          role="status"
-          className="flex items-center gap-2 border-b border-info-border bg-info-bg px-4 py-1.5 text-small text-info lg:px-6"
-        >
-          <Globe aria-hidden className="size-3.5" />
-          Viewing consolidated data across all branches
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </header>
   );
 }

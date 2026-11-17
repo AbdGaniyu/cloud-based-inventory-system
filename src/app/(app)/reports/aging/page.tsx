@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { PageHeader } from "@/components/shell/page-header";
+import { PageBody } from "@/components/shell/page-body";
 import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { UpcomingScreen } from "@/components/shell/upcoming-screen";
 import { requirePageAccess } from "@/server/auth/session";
@@ -19,9 +19,8 @@ export default function Page() {
 async function Content() {
   await requirePageAccess("report.view");
   return (
-    <>
-      <PageHeader title="Aging" description="Receivables and payables by days overdue." />
+    <PageBody>
       <UpcomingScreen step={10} summary="Aging buckets with CSV export." />
-    </>
+    </PageBody>
   );
 }

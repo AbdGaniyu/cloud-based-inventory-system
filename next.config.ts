@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Keep the dev badge clear of the branch rail's account button (bottom-left).
+  devIndicators: { position: "bottom-right" },
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {

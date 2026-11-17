@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { PageHeader } from "@/components/shell/page-header";
+import { PageBody } from "@/components/shell/page-body";
+import { SectionHeader } from "@/components/shell/page-header";
 import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { UpcomingScreen } from "@/components/shell/upcoming-screen";
 import { requirePageAccess } from "@/server/auth/session";
 import { db } from "@/server/db";
 
-export const metadata: Metadata = { title: "Dashboard" };
+export const metadata: Metadata = { title: "Overview" };
 
 export default function DashboardPage() {
   return (
@@ -25,12 +26,15 @@ async function Content() {
   const firstName = ctx.name.split(/\s+/)[0] ?? ctx.name;
 
   return (
-    <>
-      <PageHeader title={`Welcome, ${firstName}`} description={scope ? `Showing ${scope.name}.` : "Showing all branches."} />
+    <PageBody>
+      <SectionHeader
+        title={`Welcome, ${firstName}`}
+        description={scope ? `Showing ${scope.name}.` : "Showing all branches."}
+      />
       <UpcomingScreen
         step={10}
-        summary="KPIs, invoiced vs collected, branch performance, installments due this week and alerts."
+        summary="Business statistic KPIs, invoiced vs collected, receivables aging, branch performance, installments due this week and alerts — built to docs/design/mockups/overview.png."
       />
-    </>
+    </PageBody>
   );
 }
