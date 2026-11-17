@@ -3,7 +3,7 @@
 Multi-branch inventory, POS invoicing, credit ledger and automated customer messaging for a gadget retailer.
 Project rules live in [`CLAUDE.md`](./CLAUDE.md); visual rules in [`DESIGN.md`](./DESIGN.md).
 
-> Status: build steps 1–6 of 13 done (database + seed; auth, RBAC, shell; inventory + stock intake; transfers + waybill; POS checkout with installments; invoice PDF, thermal receipt, warranty certificate + public check page). Full setup docs land in step 13.
+> Status: build steps 1–7 of 13 done (database + seed; auth, RBAC, shell; inventory + stock intake; transfers + waybill; POS checkout with installments; invoice PDF, thermal receipt, warranty certificate + public check page; WhatsApp/SMS messaging with fallback, delivery webhooks and post-checkout receipts). Full setup docs land in step 13.
 
 ## Local setup
 
@@ -39,3 +39,43 @@ The seed prints the list; it is:
 - Guarantees Prisma can't express live in migration SQL: 27 CHECK constraints (non-negative stock, invoice
   totals/balances reconcile, signed payment ledger rules, one-branch-per-staff …) and a trigger that makes
   `audit_logs` append-only (UPDATE / DELETE / TRUNCATE raise an error).
+
+## Customer messages
+
+Receipts, warranty cards, reminders and payment confirmations go out over WhatsApp, falling back to SMS
+(with links in place of attachments) when WhatsApp fails or the customer has opted out of it. Every
+message is a row in `notification_logs`; providers are picked with `WHATSAPP_PROVIDER` and `SMS_PROVIDER`.
+The default `console` providers print messages to the dev server log and report them as sent.
+
+### WhatsApp templates to register with Meta
+
+Business-initiated WhatsApp messages must use templates approved in WhatsApp Manager. Register one per
+key below (category **Utility**, language **English (en)**) with **named** parameters spelled exactly as
+in our template body, e.g. `{{customer_name}}`. Then put the approved name in the template's
+"WhatsApp template name" (seeded as `gh_<key>`). Receipt and warranty templates need a **Document** header;
+the PDF is attached from a signed link.
+
+| Template key | Suggested name | Header | Body parameters |
+|---|---|---|---|
+| `receipt` | `gh_receipt` | Document | customer_name, branch_name, invoice_number, invoice_total |
+| `warranty_card` | `gh_warranty_card` | Document | customer_name, device_name, serial_masked, warranty_expiry, warranty_link |
+| `installment_due_3d` | `gh_installment_due_3d` | none | customer_name, amount_due, invoice_number, due_date, balance_remaining, payment_instructions |
+| `installment_due_today` | `gh_installment_due_today` | none | customer_name, amount_due, invoice_number, balance_remaining, payment_instructions |
+| `installment_overdue_1d` | `gh_installment_overdue_1d` | none | customer_name, amount_due, invoice_number, due_date, payment_instructions |
+| `installment_overdue_7d` | `gh_installment_overdue_7d` | none | customer_name, amount_due, invoice_number, due_date, balance_remaining, branch_name, payment_instructions |
+| `installment_overdue_14d` | `gh_installment_overdue_14d` | none | customer_name, amount_due, invoice_number, branch_name, payment_instructions |
+| `payment_confirmation` | `gh_payment_confirmation` | none | customer_name, amount_paid, invoice_number, branch_name, balance_remaining |
+| `manual_reminder` | `gh_manual_reminder` | none | customer_name, branch_name, invoice_number, balance_remaining, payment_instructions |
+
+The parameter lists match the seeded bodies. If you edit a body, re-register the template so its
+parameters still match. With **Twilio**, set the template name to the Content SID (`HX…`). Its
+variables are positional (`{{1}}`, `{{2}}`, …) in the order they appear in our body, and for
+receipts and warranty cards one extra, final variable carries the document URL.
+
+### Delivery webhooks
+
+| Provider | URL | Secured by |
+|---|---|---|
+| WhatsApp Cloud | `{APP_URL}/api/webhooks/whatsapp` (subscribe to `messages`) | `WHATSAPP_CLOUD_WEBHOOK_VERIFY_TOKEN` handshake + `WHATSAPP_CLOUD_APP_SECRET` signature |
+| Twilio | sent automatically as each message's StatusCallback | `X-Twilio-Signature` with `TWILIO_AUTH_TOKEN` |
+| Termii | `{APP_URL}/api/webhooks/termii?token={TERMII_WEBHOOK_TOKEN}` | URL token |

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
+import { after } from "next/server";
 import { z } from "zod";
 
 import { checkoutSchema } from "@/lib/validators/checkout";
@@ -10,7 +11,9 @@ import { type ActionResult, runAction } from "@/server/action-result";
 import { requireActionSession } from "@/server/auth/session";
 import { ValidationError } from "@/server/errors";
 import { createCustomer, type CustomerOption, searchCustomers } from "@/server/services/customer.service";
+import { deliverMessages } from "@/server/notifications";
 import { type CheckoutResult, checkout } from "@/server/services/invoice.service";
+import { listInvoiceMessages, type MessageView, queueCheckoutMessages } from "@/server/services/message.service";
 import { listPosStores, POS_BRANCH_COOKIE, type PosCatalog, searchCatalog } from "@/server/services/pos.service";
 import { assertCan } from "@/server/auth/permissions";
 
@@ -40,14 +43,32 @@ export async function addCustomer(input: unknown): Promise<ActionResult<Customer
   return runAction(async () => createCustomer(await requireActionSession(), parse(quickCustomerSchema, input)));
 }
 
-export async function completeSale(input: unknown): Promise<ActionResult<CheckoutResult>> {
+export type CompletedSale = CheckoutResult & { messagesQueued: boolean };
+
+export async function completeSale(input: unknown): Promise<ActionResult<CompletedSale>> {
   return runAction(async () => {
     const data = parse(checkoutSchema, input);
-    const result = await checkout(await requireActionSession(), data);
+    const ctx = await requireActionSession();
+    const result = await checkout(ctx, data);
     revalidatePath("/inventory");
     revalidatePath("/pos");
-    return result;
+    // The sale is committed. Messages are queued now and sent after the response; a messaging
+    // problem is logged and never turns a completed sale into an error (invariant 11).
+    let messagesQueued = false;
+    try {
+      const queued = await queueCheckoutMessages(result.invoiceId, ctx.userId);
+      messagesQueued = queued.length > 0;
+      after(() => deliverMessages(queued.filter((m) => m.status === "QUEUED").map((m) => m.id)));
+    } catch (error) {
+      console.error(`Could not queue messages for invoice ${result.number}`, error);
+    }
+    return { ...result, messagesQueued };
   });
+}
+
+/** Message rows for the success panel, polled while any are still queued. */
+export async function saleMessages(input: unknown): Promise<ActionResult<MessageView[]>> {
+  return runAction(async () => listInvoiceMessages(await requireActionSession(), parse(z.guid(), input)));
 }
 
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;

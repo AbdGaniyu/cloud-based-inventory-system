@@ -4,7 +4,7 @@ import { Loader2, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
-import { choosePosBranch, completeSale, searchPosCatalog } from "@/app/(app)/pos/actions";
+import { choosePosBranch, type CompletedSale, completeSale, searchPosCatalog } from "@/app/(app)/pos/actions";
 import { type CartAccessory, type CartLine, moneyOrZero, newKey, type PaymentRow, type PlanDraft, previewTotals } from "@/app/(app)/pos/cart";
 import { CustomerPicker } from "@/app/(app)/pos/customer-picker";
 import { ApprovalDialog, TradeInDialog } from "@/app/(app)/pos/dialogs";
@@ -24,7 +24,7 @@ import { sum, ZERO } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { type CheckoutFormValues, checkoutSchema, type TradeInInput } from "@/lib/validators/checkout";
 import type { CustomerOption } from "@/server/services/customer.service";
-import type { CheckoutResult, CheckoutSettings } from "@/server/services/invoice.service";
+import type { CheckoutSettings } from "@/server/services/invoice.service";
 import type { PosAccessory, PosBranch, PosCatalog, PosUnit } from "@/server/services/pos.service";
 
 const SEARCH_DEBOUNCE_MS = 200;
@@ -100,7 +100,7 @@ export function PosScreen({
   const [payments, setPayments] = useState<PaymentRow[]>(freshPayments("BANK_TRANSFER"));
   const [downPayments, setDownPayments] = useState<PaymentRow[]>(freshPayments("CASH"));
   const [plan, setPlan] = useState<PlanDraft>(freshPlan(today));
-  const [result, setResult] = useState<CheckoutResult | null>(null);
+  const [result, setResult] = useState<CompletedSale | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [submitting, startSubmit] = useTransition();

@@ -3,13 +3,14 @@
 import { Download, FileText, Printer, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 
+import type { CompletedSale } from "@/app/(app)/pos/actions";
 import { formatCalendarDate } from "@/app/(app)/pos/payment-section";
+import { MessageChips } from "@/components/notifications/message-chips";
 import { Money } from "@/components/money";
 import { Button } from "@/components/ui/button";
-import type { CheckoutResult } from "@/server/services/invoice.service";
 
 /** Shown in place of the cart after checkout (mockup: pos-success). */
-export function SuccessPanel({ result, onNewSale }: { result: CheckoutResult; onNewSale: () => void }) {
+export function SuccessPanel({ result, onNewSale }: { result: CompletedSale; onNewSale: () => void }) {
   const balanceDue = Number(result.balance) > 0;
   const singleCard = result.warrantyCardIds.length === 1 ? result.warrantyCardIds[0] : null;
   return (
@@ -45,11 +46,9 @@ export function SuccessPanel({ result, onNewSale }: { result: CheckoutResult; on
           )}
         </dl>
 
-        <p className="mt-4">
-          <span className="inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-small text-muted-foreground">
-            Receipt · WhatsApp · switches on in build step 7
-          </span>
-        </p>
+        <div className="mt-4">
+          <MessageChips invoiceId={result.invoiceId} />
+        </div>
 
         <div className="mt-4 grid grid-cols-2 gap-3">
           <Button asChild variant="secondary" size="lg">

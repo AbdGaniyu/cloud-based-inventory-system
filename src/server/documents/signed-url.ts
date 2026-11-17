@@ -50,3 +50,17 @@ export function verifyDocumentSignature(
   const given = Buffer.from(params.sig);
   return expected.length === given.length && timingSafeEqual(expected, given);
 }
+
+const SIGNED_PATH = /\/api\/pdf\/(invoice|warranty)\/([0-9a-f-]{36})(?:\?|$)/;
+
+/** Re-signs a document link from an older message so a resend never carries an expired URL; other URLs pass through. */
+export function refreshSignedUrl(url: string, options?: { now?: Date }): string {
+  const match = SIGNED_PATH.exec(url);
+  if (!match) return url;
+  return signedDocumentUrl(match[1] as DocumentKind, match[2], options);
+}
+
+/** Public warranty check page (no signature: it shows no personal data). */
+export function publicWarrantyUrl(publicId: string): string {
+  return `${(process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "")}/w/${publicId}`;
+}

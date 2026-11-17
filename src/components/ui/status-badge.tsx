@@ -1,4 +1,4 @@
-import type { InvoiceStatus, PurchaseOrderStatus, ScheduleStatus, TransferStatus, UnitCondition, UnitStatus } from "@/generated/prisma/enums";
+import type { InvoiceStatus, NotificationStatus, PurchaseOrderStatus, ScheduleStatus, TransferStatus, UnitCondition, UnitStatus } from "@/generated/prisma/enums";
 import { cn } from "@/lib/utils";
 
 /** One label and one colour per status, everywhere (DESIGN.md §2.4). */
@@ -112,3 +112,20 @@ export function ScheduleStatusBadge({ status, dueSoon }: { status: ScheduleStatu
   if (dueSoon) return <Badge tone="warning">Due soon</Badge>;
   return <Badge tone="neutral">{status === "PARTIAL" ? "Part paid" : "Pending"}</Badge>;
 }
+
+const NOTIFICATION_STATUS: Record<NotificationStatus, { label: string; tone: Tone }> = {
+  QUEUED: { label: "Queued", tone: "neutral" },
+  SENT: { label: "Sent", tone: "info" },
+  DELIVERED: { label: "Delivered", tone: "success" },
+  FAILED: { label: "Failed", tone: "danger" },
+  SKIPPED: { label: "Not sent", tone: "neutral" },
+};
+
+export function NotificationStatusBadge({ status }: { status: NotificationStatus }) {
+  const s = NOTIFICATION_STATUS[status];
+  return <Badge tone={s.tone}>{s.label}</Badge>;
+}
+
+export const NOTIFICATION_STATUS_LABELS: Record<NotificationStatus, string> = Object.fromEntries(
+  Object.entries(NOTIFICATION_STATUS).map(([k, v]) => [k, v.label]),
+) as Record<NotificationStatus, string>;

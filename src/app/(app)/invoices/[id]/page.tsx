@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { IdentifierChip } from "@/components/identifier-chip";
+import { MessageTimeline } from "@/components/notifications/message-timeline";
 import { Money } from "@/components/money";
 import { PageBody } from "@/components/shell/page-body";
 import { SectionHeader } from "@/components/shell/page-header";
@@ -16,9 +17,11 @@ import { addDays, todayInStoreTz } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { cn } from "@/lib/utils";
+import { can } from "@/server/auth/permissions";
 import { requirePageAccess } from "@/server/auth/session";
 import { NotFoundError } from "@/server/errors";
 import { getInvoiceDocument } from "@/server/services/document.service";
+import { listInvoiceMessages } from "@/server/services/message.service";
 
 export const metadata: Metadata = { title: "Invoice" };
 
@@ -54,6 +57,7 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
     if (error instanceof NotFoundError) notFound();
     throw error;
   });
+  const messages = can(ctx, "notification.view") ? await listInvoiceMessages(ctx, invoice.id) : null;
   const today = todayInStoreTz();
   const overdue = invoice.displayStatus === "OVERDUE";
   const warranties = invoice.items.filter((i) => i.warranty);
@@ -205,6 +209,15 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
               </ul>
             )}
           </section>
+
+          {messages && (
+            <MessageTimeline
+              invoiceId={invoice.id}
+              initial={messages}
+              canSend={can(ctx, "message.send")}
+              canRemind={invoice.status !== "VOID" && Number(invoice.balance) > 0}
+            />
+          )}
         </div>
 
         <aside className="flex flex-col gap-4 xl:sticky xl:top-6">

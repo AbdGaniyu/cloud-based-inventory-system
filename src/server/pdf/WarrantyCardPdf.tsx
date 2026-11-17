@@ -6,6 +6,7 @@ import QRCode from "qrcode";
 import { CONDITION_LABELS } from "@/components/ui/status-badge";
 import { STORE } from "@/config/store";
 import { formatPhoneDisplay } from "@/lib/phone";
+import { publicWarrantyUrl } from "@/server/documents/signed-url";
 import { formatCalendar, MM } from "@/server/pdf/common";
 import { PDF_MONO, PDF_SANS, registerPdfFonts } from "@/server/pdf/fonts";
 import type { WarrantyDocument } from "@/server/services/document.service";
@@ -75,14 +76,9 @@ function WarrantyCertificate({ card, qr, verifyUrl }: { card: WarrantyDocument; 
   );
 }
 
-export function warrantyVerifyUrl(publicId: string): string {
-  const base = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
-  return `${base}/w/${publicId}`;
-}
-
 export async function renderWarrantyPdf(card: WarrantyDocument): Promise<Buffer> {
   registerPdfFonts();
-  const verifyUrl = warrantyVerifyUrl(card.publicId);
+  const verifyUrl = publicWarrantyUrl(card.publicId);
   const qr = await QRCode.toDataURL(verifyUrl, { margin: 1, width: 360, errorCorrectionLevel: "M" });
   return renderToBuffer(<WarrantyCertificate card={card} qr={qr} verifyUrl={verifyUrl} />);
 }
