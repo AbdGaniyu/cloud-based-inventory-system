@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { CONDITION_LABELS } from "@/components/ui/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { STORE } from "@/config/store";
+import { formatPhoneDisplay } from "@/lib/phone";
 import { cn } from "@/lib/utils";
 import { getPublicWarranty } from "@/server/services/document.service";
 
@@ -24,7 +25,15 @@ export default function WarrantyCheckPage({ params }: PageProps<"/w/[publicId]">
           <WarrantyCard params={params} />
         </Suspense>
         <p className="mt-6 text-center text-small text-muted-foreground">
-          Questions about this warranty? Visit any {STORE.name} branch with your invoice.
+          Questions about this warranty? Visit any {STORE.name} branch with your invoice, call{" "}
+          <a href={`tel:${STORE.contact.phone}`} className="underline-offset-4 hover:underline">
+            {formatPhoneDisplay(STORE.contact.phone)}
+          </a>{" "}
+          or email{" "}
+          <a href={`mailto:${STORE.contact.email}`} className="underline-offset-4 hover:underline">
+            {STORE.contact.email}
+          </a>
+          .
         </p>
       </div>
     </main>

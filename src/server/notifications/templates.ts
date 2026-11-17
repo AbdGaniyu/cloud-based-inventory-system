@@ -85,7 +85,7 @@ export const SAMPLE_VARIABLES: Record<string, string> = {
   device_name: "Samsung Galaxy S24 Ultra 256GB",
   serial_masked: "ending 3829",
   warranty_expiry: "16 Nov 2027",
-  warranty_link: "https://gadgethub.example/w/XVAdeNkvlL",
-  document_link: "https://gadgethub.example/api/pdf/invoice/…",
-  payment_instructions: "Pay at any Gadget Hub branch or transfer to Zenith Bank 1012345678 (Gadget Hub Ltd).",
+  warranty_link: "https://leeplugshub.com/w/XVAdeNkvlL",
+  document_link: "https://leeplugshub.com/api/pdf/invoice/…",
+  payment_instructions: "Pay at any LeePlugsHub branch or transfer to Zenith Bank 1012345678 (LeePlugsHub).",
 };

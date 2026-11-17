@@ -85,9 +85,9 @@ const BRANCHES = [
     code: "MAIN",
     name: "Main Branch",
     type: "STORE",
-    address: "25 Broad Street, Lagos Island, Lagos",
-    phone: "0802 555 0101",
-    email: "main@gadgethub.test",
+    address: "5, Pepple Street, Computer Village, Ikeja",
+    phone: "+234 905 870 6999",
+    email: "info@leeplugshub.com",
   },
   {
     code: "IKJ",
@@ -312,9 +312,9 @@ type CustomerKey = keyof typeof CUSTOMERS;
 
 const WARRANTY_TERMS =
   "Covers manufacturing defects for the period shown. Excludes physical damage, liquid damage, " +
-  "unauthorised repairs and software issues. Present this card or its QR code at any Gadget Hub branch.";
+  "unauthorised repairs and software issues. Present this card or its QR code at any LeePlugsHub branch.";
 
-const PAYMENT_INSTRUCTIONS = "Pay at any Gadget Hub branch or transfer to Zenith Bank 1012345678 (Gadget Hub Ltd).";
+const PAYMENT_INSTRUCTIONS = "Pay at any LeePlugsHub branch or transfer to Zenith Bank 1012345678 (LeePlugsHub).";
 
 const TEMPLATES: {
   key: string;
@@ -326,76 +326,76 @@ const TEMPLATES: {
   {
     key: "receipt",
     name: "Receipt",
-    body: "Hi {{customer_name}}, thank you for shopping at Gadget Hub {{branch_name}}. Invoice {{invoice_number}}: {{invoice_total}}. Your receipt is attached.",
-    smsBody: "Gadget Hub: thanks {{customer_name}}! Invoice {{invoice_number}} {{invoice_total}}. Receipt: {{document_link}}",
+    body: "Hi {{customer_name}}, thank you for shopping at LeePlugsHub {{branch_name}}. Invoice {{invoice_number}}: {{invoice_total}}. Your receipt is attached.",
+    smsBody: "LeePlugsHub: thanks {{customer_name}}! Invoice {{invoice_number}} {{invoice_total}}. Receipt: {{document_link}}",
     whatsappTemplateName: "gh_receipt",
   },
   {
     key: "warranty_card",
     name: "Warranty card",
     body: "Hi {{customer_name}}, your {{device_name}} ({{serial_masked}}) is under warranty until {{warranty_expiry}}. Your warranty card is attached. Verify anytime: {{warranty_link}}",
-    smsBody: "Gadget Hub: {{device_name}} warranty valid to {{warranty_expiry}}. Card: {{warranty_link}}",
+    smsBody: "LeePlugsHub: {{device_name}} warranty valid to {{warranty_expiry}}. Card: {{warranty_link}}",
     whatsappTemplateName: "gh_warranty_card",
   },
   {
     key: "installment_due_3d",
     name: "Instalment due in 3 days",
     body: "Hi {{customer_name}}, a friendly reminder that {{amount_due}} on invoice {{invoice_number}} is due on {{due_date}}. Balance remaining: {{balance_remaining}}. {{payment_instructions}}",
-    smsBody: "Gadget Hub: {{amount_due}} due {{due_date}} on {{invoice_number}}. Bal {{balance_remaining}}. {{payment_instructions}}",
+    smsBody: "LeePlugsHub: {{amount_due}} due {{due_date}} on {{invoice_number}}. Bal {{balance_remaining}}. {{payment_instructions}}",
     whatsappTemplateName: "gh_installment_due_3d",
   },
   {
     key: "installment_due_today",
     name: "Instalment due today",
     body: "Hi {{customer_name}}, your instalment of {{amount_due}} on invoice {{invoice_number}} is due today. Balance remaining: {{balance_remaining}}. {{payment_instructions}}",
-    smsBody: "Gadget Hub: {{amount_due}} due TODAY on {{invoice_number}}. Bal {{balance_remaining}}. {{payment_instructions}}",
+    smsBody: "LeePlugsHub: {{amount_due}} due TODAY on {{invoice_number}}. Bal {{balance_remaining}}. {{payment_instructions}}",
     whatsappTemplateName: "gh_installment_due_today",
   },
   {
     key: "installment_overdue_1d",
     name: "Instalment 1 day overdue",
     body: "Hi {{customer_name}}, your instalment of {{amount_due}} on invoice {{invoice_number}} was due yesterday ({{due_date}}). Please pay as soon as you can. {{payment_instructions}}",
-    smsBody: "Gadget Hub: {{amount_due}} on {{invoice_number}} was due {{due_date}}. Please pay. {{payment_instructions}}",
+    smsBody: "LeePlugsHub: {{amount_due}} on {{invoice_number}} was due {{due_date}}. Please pay. {{payment_instructions}}",
     whatsappTemplateName: "gh_installment_overdue_1d",
   },
   {
     key: "installment_overdue_7d",
     name: "Instalment 7 days overdue",
     body: "Hi {{customer_name}}, your instalment of {{amount_due}} on invoice {{invoice_number}} is now 7 days overdue (due {{due_date}}). Balance remaining: {{balance_remaining}}. Please contact {{branch_name}} or pay now. {{payment_instructions}}",
-    smsBody: "Gadget Hub: {{amount_due}} on {{invoice_number}} is 7 days overdue. Bal {{balance_remaining}}. {{payment_instructions}}",
+    smsBody: "LeePlugsHub: {{amount_due}} on {{invoice_number}} is 7 days overdue. Bal {{balance_remaining}}. {{payment_instructions}}",
     whatsappTemplateName: "gh_installment_overdue_7d",
   },
   {
     key: "installment_overdue_14d",
     name: "Instalment 14 days overdue",
     body: "Hi {{customer_name}}, your instalment of {{amount_due}} on invoice {{invoice_number}} is 14 days overdue. Your account will be reviewed by management. Please pay or call {{branch_name}} today. {{payment_instructions}}",
-    smsBody: "Gadget Hub: {{invoice_number}} is 14 days overdue ({{amount_due}}). Please pay or call us today.",
+    smsBody: "LeePlugsHub: {{invoice_number}} is 14 days overdue ({{amount_due}}). Please pay or call us today.",
     whatsappTemplateName: "gh_installment_overdue_14d",
   },
   {
     key: "payment_confirmation",
     name: "Payment confirmation",
     body: "Hi {{customer_name}}, we have received {{amount_paid}} for invoice {{invoice_number}} at {{branch_name}}. Balance remaining: {{balance_remaining}}. Thank you!",
-    smsBody: "Gadget Hub: received {{amount_paid}} for {{invoice_number}}. Bal {{balance_remaining}}. Thank you!",
+    smsBody: "LeePlugsHub: received {{amount_paid}} for {{invoice_number}}. Bal {{balance_remaining}}. Thank you!",
     whatsappTemplateName: "gh_payment_confirmation",
   },
   {
     key: "manual_reminder",
     name: "Manual reminder",
-    body: "Hi {{customer_name}}, this is a reminder from Gadget Hub {{branch_name}} about invoice {{invoice_number}}. Balance remaining: {{balance_remaining}}. {{payment_instructions}}",
-    smsBody: "Gadget Hub: reminder for {{invoice_number}}. Bal {{balance_remaining}}. {{payment_instructions}}",
+    body: "Hi {{customer_name}}, this is a reminder from LeePlugsHub {{branch_name}} about invoice {{invoice_number}}. Balance remaining: {{balance_remaining}}. {{payment_instructions}}",
+    smsBody: "LeePlugsHub: reminder for {{invoice_number}}. Bal {{balance_remaining}}. {{payment_instructions}}",
     whatsappTemplateName: "gh_manual_reminder",
   },
 ];
 
 const SETTINGS: { key: string; value: Prisma.InputJsonValue }[] = [
-  { key: "store.name", value: "Gadget Hub" },
+  { key: "store.name", value: "LeePlugsHub" },
   { key: "tax.vatRatePercent", value: "7.50" },
   { key: "installments.approvalThreshold", value: "1000000.00" },
   { key: "installments.minDownPaymentPercent", value: "30" },
   {
     key: "payments.bankDetails",
-    value: { bankName: "Zenith Bank", accountName: "Gadget Hub Ltd", accountNumber: "1012345678" },
+    value: { bankName: "Zenith Bank", accountName: "LeePlugsHub", accountNumber: "1012345678" },
   },
   { key: "payments.instructions", value: PAYMENT_INSTRUCTIONS },
   { key: "alerts.agingDays", value: 60 },

@@ -68,6 +68,7 @@ function InvoiceDocumentPdf({ invoice }: { invoice: InvoiceDocument }) {
             <Text style={s.muted}>
               {invoice.branch.name} branch · {invoice.branch.code}
             </Text>
+            <Text style={[s.subtle, { fontSize: 7.5 }]}>{STORE.contact.address} · {formatPhoneDisplay(STORE.contact.phone)} · {STORE.contact.email}</Text>
           </View>
           <View style={{ alignItems: "flex-end" }}>
             <Text style={s.title}>INVOICE</Text>

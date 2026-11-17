@@ -1,4 +1,4 @@
-// Gadget Hub — multi-branch inventory, POS, credit ledger and messaging.
+// LeePlugsHub — multi-branch inventory, POS, credit ledger and messaging.
 //
 // Conventions
 // - Tables and columns are snake_case in Postgres (@@map / @map); Prisma models stay PascalCase/camelCase.

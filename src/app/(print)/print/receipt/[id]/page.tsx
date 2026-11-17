@@ -104,6 +104,9 @@ async function Receipt({ params, searchParams }: { params: PageProps<"/print/rec
         <p className="mt-1 text-center text-[10px]">Scan for your full invoice</p>
         <Divider />
         <p className="text-center text-[10px]">{STORE.returnPolicy}</p>
+        <p className="mt-1 text-center text-[10px]">
+          {formatPhoneDisplay(STORE.contact.phone)} · {STORE.contact.email}
+        </p>
         <p className="mt-1 text-center text-[11px] font-semibold">Thank you for shopping with us</p>
       </article>
     </div>

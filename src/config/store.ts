@@ -6,7 +6,13 @@ import type { CountryCode } from "libphonenumber-js";
  * non-editable locale settings.
  */
 export const STORE = {
-  name: "Gadget Hub",
+  name: "LeePlugsHub",
+  /** Head-office contact printed on invoices, receipts and warranty documents. */
+  contact: {
+    phone: "+2349058706999",
+    email: "info@leeplugshub.com",
+    address: "5, Pepple Street, Computer Village, Ikeja",
+  },
   currency: "NGN",
   currencySymbol: "₦",
   currencyLocale: "en-NG",

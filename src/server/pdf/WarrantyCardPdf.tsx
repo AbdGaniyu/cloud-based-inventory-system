@@ -45,6 +45,7 @@ function WarrantyCertificate({ card, qr, verifyUrl }: { card: WarrantyDocument; 
         <View style={s.frame}>
           <View style={{ flex: 1 }}>
             <Text style={s.store}>{STORE.name}</Text>
+            <Text style={{ fontSize: 7, color: "#52525B" }}>{STORE.contact.address} · {formatPhoneDisplay(STORE.contact.phone)} · {STORE.contact.email}</Text>
             <Text style={s.title}>Warranty Certificate</Text>
             <View style={s.grid}>
               <Field label="Device" value={card.deviceName} />

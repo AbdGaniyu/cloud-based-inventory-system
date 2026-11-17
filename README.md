@@ -1,4 +1,4 @@
-# Gadget Hub
+# LeePlugsHub
 
 Multi-branch inventory, POS invoicing, credit ledger and automated customer messaging for a gadget and
 consumer-electronics retailer. Serialized devices are tracked per IMEI/serial, accessories by quantity per

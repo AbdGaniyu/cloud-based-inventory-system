@@ -1,5 +1,6 @@
 import "server-only";
 
+import { STORE } from "@/config/store";
 import { normalizePhone } from "@/lib/phone";
 import type { UpdateTemplateInput } from "@/lib/validators/settings";
 import { assertCan, type Ctx } from "@/server/auth/permissions";
@@ -156,7 +157,7 @@ export async function sendTestMessage(ctx: Ctx, input: { channel: "WHATSAPP" | "
   const providers = await resolveProviders();
   const provider = input.channel === "WHATSAPP" ? providers.whatsapp : providers.sms;
   try {
-    const result = await provider.send({ to, body: "Gadget Hub: this is a test message from Settings. No action needed." });
+    const result = await provider.send({ to, body: `${STORE.name}: this is a test message from Settings. No action needed.` });
     await db.$transaction((tx) =>
       writeAudit(tx, { userId: ctx.userId, branchId: null, action: "messaging.test", entityType: "Setting", entityId: "messaging", after: { channel: input.channel, provider: provider.name, to } }),
     );

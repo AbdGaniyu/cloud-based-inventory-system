@@ -53,7 +53,7 @@ describe("notification engine", () => {
         key: "receipt",
         name: "Receipt",
         body: "Hi {{customer_name}}, invoice {{invoice_number}}: {{invoice_total}}. Receipt attached.",
-        smsBody: "Gadget Hub: {{invoice_number}} {{invoice_total}}. Receipt: {{document_link}}",
+        smsBody: "LeePlugsHub: {{invoice_number}} {{invoice_total}}. Receipt: {{document_link}}",
         whatsappTemplateName: "gh_receipt",
       },
     });
@@ -92,7 +92,7 @@ describe("notification engine", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ channel: "WHATSAPP", status: "FAILED", error: "(#131026) Recipient is not a WhatsApp user" });
     expect(rows[1]).toMatchObject({ channel: "SMS", status: "SENT", parentId: rows[0].id, dedupeKey: "receipt:invoice-1:SMS", mediaUrl: null });
-    expect(sms.sent[0].body).toBe("Gadget Hub: INV-IKJ-000001 NGN 1,000.00. Receipt: https://x.test/doc");
+    expect(sms.sent[0].body).toBe("LeePlugsHub: INV-IKJ-000001 NGN 1,000.00. Receipt: https://x.test/doc");
     expect(sms.sent[0].mediaUrl).toBeUndefined();
 
     // A retry of the failed WhatsApp row never sends a second SMS.
