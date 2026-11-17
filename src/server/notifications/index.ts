@@ -5,7 +5,7 @@ import { z } from "zod";
 import { Prisma } from "@/generated/prisma/client";
 import type { MessageChannel, NotificationStatus } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
-import { type Providers, providersFromEnv } from "@/server/notifications/providers";
+import { type Providers, resolveProviders } from "@/server/notifications/providers";
 import { type OutgoingMessage, ProviderError, type DeliveryUpdate } from "@/server/notifications/providers/types";
 import { renderTemplate, type TemplateKey, type TemplateVariables, variablesInOrder } from "@/server/notifications/templates";
 import { getSetting } from "@/server/services/settings.service";
@@ -76,7 +76,7 @@ export async function queueMessage(request: QueueRequest, options: NotifyOptions
   ]);
   if (!template?.isActive) return null;
 
-  const providers = options.providers ?? providersFromEnv();
+  const providers = options.providers ?? (await resolveProviders());
   const channel: MessageChannel | null = customer.whatsappOptIn ? "WHATSAPP" : customer.smsOptIn ? "SMS" : null;
   const smsBody = template.smsBody ?? template.body;
   const now = options.now ?? new Date();
@@ -123,7 +123,7 @@ export async function deliverMessage(id: string, options: NotifyOptions = {}): P
   });
   if (claimed.count === 0) return null;
 
-  const providers = options.providers ?? providersFromEnv();
+  const providers = options.providers ?? (await resolveProviders());
   const provider = row.channel === "WHATSAPP" ? providers.whatsapp : providers.sms;
   const template = await db.messageTemplate.findUnique({ where: { key: row.templateKey } });
   const variables = storedVariables(row.variables);
@@ -165,7 +165,7 @@ async function fallBackToSms(parentId: string, options: NotifyOptions): Promise<
   if (await db.notificationLog.findUnique({ where: { dedupeKey }, select: { id: true } })) return;
 
   const template = await db.messageTemplate.findUnique({ where: { key: parent.templateKey } });
-  const providers = options.providers ?? providersFromEnv();
+  const providers = options.providers ?? (await resolveProviders());
   const variables = storedVariables(parent.variables);
   let child: { id: string };
   try {

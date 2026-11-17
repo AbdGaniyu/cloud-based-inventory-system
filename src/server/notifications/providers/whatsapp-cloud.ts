@@ -1,12 +1,12 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { requireProviderValue } from "@/server/notifications/provider-config";
 import {
   type DeliveryUpdate,
   digitsOnly,
   type MessageProvider,
   type OutgoingMessage,
   providerFetch,
-  requireEnv,
   WebhookAuthError,
 } from "@/server/notifications/providers/types";
 
@@ -82,12 +82,12 @@ export function whatsappCloudProvider(): MessageProvider {
     channel: "WHATSAPP",
     async send(msg) {
       const version = process.env.WHATSAPP_CLOUD_API_VERSION || DEFAULT_API_VERSION;
-      const url = `https://graph.facebook.com/${version}/${requireEnv("WHATSAPP_CLOUD_PHONE_NUMBER_ID")}/messages`;
+      const url = `https://graph.facebook.com/${version}/${await requireProviderValue("WHATSAPP_CLOUD_PHONE_NUMBER_ID")}/messages`;
       const body = (await providerFetch(
         url,
         {
           method: "POST",
-          headers: { Authorization: `Bearer ${requireEnv("WHATSAPP_CLOUD_ACCESS_TOKEN")}`, "Content-Type": "application/json" },
+          headers: { Authorization: `Bearer ${await requireProviderValue("WHATSAPP_CLOUD_ACCESS_TOKEN")}`, "Content-Type": "application/json" },
           body: JSON.stringify(buildWhatsAppCloudPayload(msg)),
         },
         describeGraphError,
@@ -98,7 +98,7 @@ export function whatsappCloudProvider(): MessageProvider {
     },
     async parseWebhook(req) {
       const raw = await req.text();
-      if (!verifyMetaSignature(raw, req.headers.get("x-hub-signature-256"), requireEnv("WHATSAPP_CLOUD_APP_SECRET"))) throw new WebhookAuthError();
+      if (!verifyMetaSignature(raw, req.headers.get("x-hub-signature-256"), await requireProviderValue("WHATSAPP_CLOUD_APP_SECRET"))) throw new WebhookAuthError();
       return parseWhatsAppCloudStatuses(JSON.parse(raw));
     },
   };

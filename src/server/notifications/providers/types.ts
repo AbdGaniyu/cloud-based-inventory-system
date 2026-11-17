@@ -66,12 +66,6 @@ export async function providerFetch(url: string, init: RequestInit, describeErro
   return body;
 }
 
-export function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new ProviderError(`${name} is not set`);
-  return value;
-}
-
 /** "+2348031234567" → "2348031234567" (WhatsApp Cloud and Termii take digits only). */
 export function digitsOnly(e164: string): string {
   return e164.replace(/\D/g, "");

@@ -1,12 +1,12 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { requireProviderValue } from "@/server/notifications/provider-config";
 import {
   type DeliveryUpdate,
   type MessageChannel,
   type MessageProvider,
   type OutgoingMessage,
   providerFetch,
-  requireEnv,
   WebhookAuthError,
 } from "@/server/notifications/providers/types";
 
@@ -76,14 +76,14 @@ export function twilioProvider(channel: MessageChannel): MessageProvider {
     name: "twilio",
     channel,
     async send(msg) {
-      const sid = requireEnv("TWILIO_ACCOUNT_SID");
-      const from = requireEnv(channel === "WHATSAPP" ? "TWILIO_WHATSAPP_FROM" : "TWILIO_SMS_FROM");
+      const sid = await requireProviderValue("TWILIO_ACCOUNT_SID");
+      const from = await requireProviderValue(channel === "WHATSAPP" ? "TWILIO_WHATSAPP_FROM" : "TWILIO_SMS_FROM");
       const body = (await providerFetch(
         `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`,
         {
           method: "POST",
           headers: {
-            Authorization: `Basic ${Buffer.from(`${sid}:${requireEnv("TWILIO_AUTH_TOKEN")}`).toString("base64")}`,
+            Authorization: `Basic ${Buffer.from(`${sid}:${await requireProviderValue("TWILIO_AUTH_TOKEN")}`).toString("base64")}`,
             "Content-Type": "application/x-www-form-urlencoded",
           },
           body: buildTwilioForm(channel, msg, from, appUrl() + TWILIO_WEBHOOK_PATH),
@@ -98,7 +98,7 @@ export function twilioProvider(channel: MessageChannel): MessageProvider {
     },
     async parseWebhook(req) {
       const params = new URLSearchParams(await req.text());
-      if (!verifyTwilioSignature(requireEnv("TWILIO_AUTH_TOKEN"), appUrl() + TWILIO_WEBHOOK_PATH, params, req.headers.get("x-twilio-signature"))) {
+      if (!verifyTwilioSignature(await requireProviderValue("TWILIO_AUTH_TOKEN"), appUrl() + TWILIO_WEBHOOK_PATH, params, req.headers.get("x-twilio-signature"))) {
         throw new WebhookAuthError();
       }
       return parseTwilioStatus(params);

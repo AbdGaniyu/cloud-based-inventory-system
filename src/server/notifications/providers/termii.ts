@@ -1,9 +1,9 @@
+import { requireProviderValue } from "@/server/notifications/provider-config";
 import {
   type DeliveryUpdate,
   digitsOnly,
   type MessageProvider,
   providerFetch,
-  requireEnv,
   verifyToken,
   WebhookAuthError,
 } from "@/server/notifications/providers/types";
@@ -43,8 +43,8 @@ export function termiiProvider(): MessageProvider {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            api_key: requireEnv("TERMII_API_KEY"),
-            from: requireEnv("TERMII_SENDER_ID"),
+            api_key: await requireProviderValue("TERMII_API_KEY"),
+            from: await requireProviderValue("TERMII_SENDER_ID"),
             to: digitsOnly(msg.to),
             sms: msg.body,
             type: "plain",
@@ -57,7 +57,7 @@ export function termiiProvider(): MessageProvider {
       return { providerMessageId: body.message_id };
     },
     async parseWebhook(req) {
-      if (!verifyToken(new URL(req.url).searchParams.get("token"), requireEnv("TERMII_WEBHOOK_TOKEN"))) throw new WebhookAuthError();
+      if (!verifyToken(new URL(req.url).searchParams.get("token"), await requireProviderValue("TERMII_WEBHOOK_TOKEN"))) throw new WebhookAuthError();
       return parseTermiiReport(await req.json());
     },
   };

@@ -290,3 +290,87 @@ async function loadMessages(where: Prisma.NotificationLogWhereInput): Promise<Me
     deliveredAt: r.deliveredAt?.toISOString() ?? null,
   }));
 }
+
+export type NotificationRow = MessageView & {
+  customer: { id: string; name: string };
+  invoice: { id: string; number: string } | null;
+};
+
+export type NotificationFilters = { status?: NotificationStatus; channel?: MessageChannel; template?: string; q?: string; page?: number };
+
+const CENTRE_PAGE_SIZE = 50;
+
+/**
+ * Notification centre (CLAUDE.md §9): every message with status, channel, time and body, newest
+ * first. Owners see the active branch (or all); others their own branch's invoices.
+ */
+export async function listNotifications(
+  ctx: Ctx,
+  filters: NotificationFilters,
+): Promise<{ rows: NotificationRow[]; total: number; page: number; pageSize: number; counts: Record<NotificationStatus | "ALL", number> }> {
+  assertCan(ctx, "notification.view");
+  const branchId = ctx.role === "OWNER" ? ctx.activeBranchId : ctx.branchId;
+  const q = filters.q?.trim();
+  const digits = q?.replace(/\D/g, "") ?? "";
+  const phoneFragment = digits.startsWith("0") ? digits.slice(1) : digits;
+  const scope: Prisma.NotificationLogWhereInput = {
+    ...(branchId ? { OR: [{ invoiceId: null }, { invoice: { branchId } }] } : {}),
+    ...(filters.channel ? { channel: filters.channel } : {}),
+    ...(filters.template ? { templateKey: filters.template } : {}),
+    ...(q
+      ? {
+          AND: [
+            {
+              OR: [
+                { customer: { name: { contains: q, mode: "insensitive" } } },
+                { invoice: { number: { contains: q, mode: "insensitive" } } },
+                ...(phoneFragment.length >= 3 ? [{ to: { contains: phoneFragment } }] : []),
+              ],
+            },
+          ],
+        }
+      : {}),
+  };
+  const where: Prisma.NotificationLogWhereInput = { ...scope, ...(filters.status ? { status: filters.status } : {}) };
+  const page = Math.max(1, filters.page ?? 1);
+  const [rows, total, grouped] = await Promise.all([
+    db.notificationLog.findMany({
+      where,
+      include: { triggeredBy: { select: { name: true } }, customer: { select: { id: true, name: true } }, invoice: { select: { id: true, number: true } } },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip: (page - 1) * CENTRE_PAGE_SIZE,
+      take: CENTRE_PAGE_SIZE,
+    }),
+    db.notificationLog.count({ where }),
+    db.notificationLog.groupBy({ by: ["status"], where: scope, _count: { _all: true } }),
+  ]);
+  const counts: Record<NotificationStatus | "ALL", number> = { ALL: 0, QUEUED: 0, SENT: 0, DELIVERED: 0, FAILED: 0, SKIPPED: 0 };
+  for (const g of grouped) {
+    counts[g.status] = g._count._all;
+    counts.ALL += g._count._all;
+  }
+  return {
+    rows: rows.map((r) => ({
+      id: r.id,
+      templateKey: r.templateKey,
+      label: templateLabel(r.templateKey),
+      channel: r.channel,
+      to: r.to,
+      body: r.body,
+      status: r.status,
+      error: r.error,
+      attempts: r.attempts,
+      isFallback: r.parentId !== null,
+      triggeredByName: r.triggeredBy?.name ?? null,
+      createdAt: r.createdAt.toISOString(),
+      sentAt: r.sentAt?.toISOString() ?? null,
+      deliveredAt: r.deliveredAt?.toISOString() ?? null,
+      customer: r.customer,
+      invoice: r.invoice,
+    })),
+    total,
+    page,
+    pageSize: CENTRE_PAGE_SIZE,
+    counts,
+  };
+}

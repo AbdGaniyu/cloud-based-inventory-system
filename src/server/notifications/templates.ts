@@ -71,3 +71,21 @@ export const TEMPLATE_LABELS: Record<TemplateKey, string> = {
 export function templateLabel(key: string): string {
   return isTemplateKey(key) ? TEMPLATE_LABELS[key] : key;
 }
+
+/** Example values for the template editor's live preview. */
+export const SAMPLE_VARIABLES: Record<string, string> = {
+  customer_name: "Adaeze",
+  branch_name: "Ikeja",
+  invoice_number: "INV-IKJ-000123",
+  invoice_total: "NGN 1,343,750.00",
+  amount_paid: "NGN 300,000.00",
+  balance_remaining: "NGN 943,750.00",
+  amount_due: "NGN 207,291.66",
+  due_date: "17 Dec 2026",
+  device_name: "Samsung Galaxy S24 Ultra 256GB",
+  serial_masked: "ending 3829",
+  warranty_expiry: "16 Nov 2027",
+  warranty_link: "https://gadgethub.example/w/XVAdeNkvlL",
+  document_link: "https://gadgethub.example/api/pdf/invoice/…",
+  payment_instructions: "Pay at any Gadget Hub branch or transfer to Zenith Bank 1012345678 (Gadget Hub Ltd).",
+};

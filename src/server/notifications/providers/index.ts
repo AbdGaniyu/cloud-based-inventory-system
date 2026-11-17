@@ -1,3 +1,4 @@
+import { providerChoice } from "@/server/notifications/provider-config";
 import { consoleProvider } from "@/server/notifications/providers/console";
 import { termiiProvider } from "@/server/notifications/providers/termii";
 import { twilioProvider } from "@/server/notifications/providers/twilio";
@@ -6,12 +7,11 @@ import { whatsappCloudProvider } from "@/server/notifications/providers/whatsapp
 
 export type Providers = { whatsapp: MessageProvider; sms: MessageProvider };
 
-/** Providers chosen by WHATSAPP_PROVIDER and SMS_PROVIDER (CLAUDE.md §9); unknown values fall back to console. */
-export function providersFromEnv(): Providers {
-  const whatsapp = process.env.WHATSAPP_PROVIDER;
-  const sms = process.env.SMS_PROVIDER;
+/** Providers chosen in Settings → Messaging, else WHATSAPP_PROVIDER / SMS_PROVIDER (CLAUDE.md §9); unknown means console. */
+export async function resolveProviders(): Promise<Providers> {
+  const choice = await providerChoice();
   return {
-    whatsapp: whatsapp === "whatsapp-cloud" ? whatsappCloudProvider() : whatsapp === "twilio" ? twilioProvider("WHATSAPP") : consoleProvider("WHATSAPP"),
-    sms: sms === "termii" ? termiiProvider() : sms === "twilio" ? twilioProvider("SMS") : consoleProvider("SMS"),
+    whatsapp: choice.whatsapp === "whatsapp-cloud" ? whatsappCloudProvider() : choice.whatsapp === "twilio" ? twilioProvider("WHATSAPP") : consoleProvider("WHATSAPP"),
+    sms: choice.sms === "termii" ? termiiProvider() : choice.sms === "twilio" ? twilioProvider("SMS") : consoleProvider("SMS"),
   };
 }
