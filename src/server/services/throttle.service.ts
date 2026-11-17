@@ -28,9 +28,11 @@ export type ThrottleKey = { key: string; limit: number };
  * Keys counted for an attempt. Lockouts are per account *and* source first, so someone guessing a
  * password locks themselves out, not the person whose account it is.
  */
-export function throttleKeys(scope: "login" | "approve", email: string, extra?: { ip?: string | null; userId?: string }): ThrottleKey[] {
+export type ThrottleScope = "login" | "approve" | "reauth";
+
+export function throttleKeys(scope: ThrottleScope, email: string, extra?: { ip?: string | null; userId?: string }): ThrottleKey[] {
   const account = email.trim().toLowerCase();
-  const source = scope === "approve" ? `user:${extra?.userId ?? "unknown"}` : `ip:${extra?.ip ?? "unknown"}`;
+  const source = scope !== "login" ? `user:${extra?.userId ?? "unknown"}` : `ip:${extra?.ip ?? "unknown"}`;
   const keys: ThrottleKey[] = [
     { key: `${scope}:pair:${account}|${source}`, limit: THROTTLE_LIMITS.pair },
     { key: `${scope}:email:${account}`, limit: THROTTLE_LIMITS.account },
@@ -43,7 +45,7 @@ export function throttleKeys(scope: "login" | "approve", email: string, extra?: 
 /** Keys to clear when an owner resets someone's password, so they can sign in at once. */
 export function throttleKeysForAccount(email: string): { startsWith: string }[] {
   const account = email.trim().toLowerCase();
-  return ["login", "approve"].flatMap((scope) => [{ startsWith: `${scope}:pair:${account}|` }, { startsWith: `${scope}:email:${account}` }]);
+  return ["login", "approve", "reauth"].flatMap((scope) => [{ startsWith: `${scope}:pair:${account}|` }, { startsWith: `${scope}:email:${account}` }]);
 }
 
 /** Minutes until the first locked key frees up, or null when none is locked. */

@@ -17,8 +17,11 @@ export function LabeledField({ label, hint, error, className, children }: { labe
   );
 }
 
-/** Runs a server action with toast feedback, field errors and a refresh on success. */
-export function useSave() {
+/**
+ * Runs a server action with toast feedback, field errors and a refresh on success. Pass
+ * `{ refresh: false }` when the result must stay on screen (a refresh could swap the component out).
+ */
+export function useSave({ refresh = true }: { refresh?: boolean } = {}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
@@ -36,7 +39,7 @@ export function useSave() {
       }
       toast.success(success);
       onDone?.(result.data);
-      router.refresh();
+      if (refresh) router.refresh();
     });
   }
 

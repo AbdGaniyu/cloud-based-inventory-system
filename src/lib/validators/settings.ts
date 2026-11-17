@@ -65,6 +65,7 @@ export const updateUserSchema = z.object({
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 
 export const resetPasswordSchema = z.object({ id: z.guid(), password });
+export const userIdSchema = z.object({ id: z.guid() });
 
 export const updateTemplateSchema = z.object({
   key: z.string().max(60),

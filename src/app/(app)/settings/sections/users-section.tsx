@@ -1,9 +1,9 @@
 "use client";
 
-import { KeyRound, Loader2, Plus } from "lucide-react";
+import { KeyRound, Loader2, Plus, ShieldOff } from "lucide-react";
 import { useState } from "react";
 
-import { addUser, editUser, setUserPassword } from "@/app/(app)/settings/actions";
+import { addUser, clearUserTwoFactor, editUser, setUserPassword } from "@/app/(app)/settings/actions";
 import { LabeledField, useSave } from "@/app/(app)/settings/sections/form-bits";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -103,7 +103,7 @@ function PasswordDialog({ user, onClose }: { user: AdminUser; onClose: () => voi
         <form onSubmit={(e) => { e.preventDefault(); save(() => setUserPassword({ id: user.id, password }), `New password set for ${user.name}`, onClose); }} className="flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle>Reset password</DialogTitle>
-            <DialogDescription>{user.name} signs in with this from now on; any sign-in lockout is cleared.</DialogDescription>
+            <DialogDescription>A temporary password: {user.name} is signed out everywhere, signs in with this once and then chooses their own. Any sign-in lockout is cleared.</DialogDescription>
           </DialogHeader>
           <LabeledField label="New password" hint={`At least ${PASSWORD_MIN} characters.`} error={fieldError("password")}>
             <Input type="text" autoComplete="off" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
@@ -122,9 +122,35 @@ function PasswordDialog({ user, onClose }: { user: AdminUser; onClose: () => voi
   );
 }
 
+function TwoFactorResetDialog({ user, onClose }: { user: AdminUser; onClose: () => void }) {
+  const { save, pending, error } = useSave();
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Reset two-factor for {user.name}?</DialogTitle>
+          <DialogDescription>
+            For a lost or replaced phone. Their authenticator and recovery codes stop working and they are signed out everywhere.
+            {user.role === "OWNER" ? " They will be asked to set two-factor up again when they next sign in." : " They can set it up again from Account security."}
+          </DialogDescription>
+        </DialogHeader>
+        {error && <p role="alert" className="text-small text-danger">{error}</p>}
+        <DialogFooter>
+          <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="destructive" disabled={pending} onClick={() => save(() => clearUserTwoFactor({ id: user.id }), `Two-factor reset for ${user.name}`, onClose)}>
+            {pending && <Loader2 aria-hidden className="animate-spin" />}
+            Reset two-factor
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function UsersSection({ users, branches, currentUserId }: { users: AdminUser[]; branches: AdminBranch[]; currentUserId: string }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [resetting, setResetting] = useState<AdminUser | null>(null);
+  const [clearing2fa, setClearing2fa] = useState<AdminUser | null>(null);
   return (
     <section aria-labelledby="users-heading" className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -156,11 +182,22 @@ export function UsersSection({ users, branches, currentUserId }: { users: AdminU
                 <td className="px-3">{ROLE_LABEL[u.role]}</td>
                 <td className="px-3">{u.branchName ?? "All branches"}</td>
                 <td className="px-3 tabular-nums text-muted-foreground">{u.lastLoginAt ? lastSeen.format(new Date(u.lastLoginAt)) : "Never"}</td>
-                <td className="px-3">{u.isActive ? <Badge tone="success">Active</Badge> : <Badge tone="neutral">Switched off</Badge>}</td>
+                <td className="px-3">
+                  <span className="flex flex-wrap gap-1">
+                    {u.isActive ? <Badge tone="success">Active</Badge> : <Badge tone="neutral">Switched off</Badge>}
+                    {u.twoFactorEnabled && <Badge tone="info" dot={false}>2FA on</Badge>}
+                    {u.mustChangePassword && <Badge tone="warning" dot={false}>Temporary password</Badge>}
+                  </span>
+                </td>
                 <td className="px-3 text-right whitespace-nowrap">
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setResetting(u)} aria-label={`Reset password for ${u.name}`}>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setResetting(u)} aria-label={`Reset password for ${u.name}`} title="Reset password">
                     <KeyRound aria-hidden />
                   </Button>
+                  {u.twoFactorEnabled && u.id !== currentUserId && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setClearing2fa(u)} aria-label={`Reset two-factor for ${u.name}`} title="Reset two-factor">
+                      <ShieldOff aria-hidden />
+                    </Button>
+                  )}
                   <Button type="button" variant="ghost" size="sm" onClick={() => setDraft({ id: u.id, name: u.name, email: u.email, role: u.role, branchId: u.branchId ?? "", isActive: u.isActive, password: "" })}>
                     Edit
                   </Button>
@@ -172,6 +209,7 @@ export function UsersSection({ users, branches, currentUserId }: { users: AdminU
       </div>
       {draft && <UserDialog draft={draft} branches={branches} onClose={() => setDraft(null)} isSelf={draft.id === currentUserId} />}
       {resetting && <PasswordDialog user={resetting} onClose={() => setResetting(null)} />}
+      {clearing2fa && <TwoFactorResetDialog user={clearing2fa} onClose={() => setClearing2fa(null)} />}
     </section>
   );
 }

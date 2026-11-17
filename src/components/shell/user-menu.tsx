@@ -1,6 +1,7 @@
 "use client";
 
-import { LogOut, Moon, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sun } from "lucide-react";
+import { LogOut, Moon, PanelLeftClose, PanelLeftOpen, ShieldCheck, SlidersHorizontal, Sun } from "lucide-react";
+import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
 
@@ -78,6 +79,11 @@ export function AccountMenu({ name, email, roleLabel, branchLabel }: { name: str
           </span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link href="/account">
+            <ShieldCheck aria-hidden className="size-4" /> Account security
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => void signOut({ callbackUrl: "/login" })}>
           <LogOut aria-hidden className="size-4" /> Sign out
         </DropdownMenuItem>

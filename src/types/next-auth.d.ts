@@ -5,6 +5,7 @@ declare module "next-auth" {
     id: string;
     role: Role;
     branchId: string | null;
+    sessionVersion: number;
   }
 
   interface Session {
@@ -23,5 +24,7 @@ declare module "next-auth/jwt" {
     userId: string;
     role: Role;
     branchId: string | null;
+    /** User.sessionVersion when issued; missing on tokens issued before it existed (treated as 0). */
+    sv?: number;
   }
 }

@@ -254,6 +254,17 @@ model User {
   branchId     String?   @map("branch_id") @db.Uuid
   isActive     Boolean   @default(true) @map("is_active")
   lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(3)
+  /// Bumped to sign the user out everywhere (password reset or change, role or branch change, 2FA change,
+  /// "sign out other devices"). Session tokens carry the version they were issued with.
+  sessionVersion     Int       @default(0) @map("session_version")
+  /// Set when someone else chose the password (new user, owner reset); the person must pick their own.
+  mustChangePassword Boolean   @default(false) @map("must_change_password")
+  passwordChangedAt  DateTime? @map("password_changed_at") @db.Timestamptz(3)
+  /// AES-256-GCM encrypted TOTP secret (src/server/secrets.ts). Set but not enabled while enrolling.
+  totpSecret         Json?     @map("totp_secret")
+  totpEnabledAt      DateTime? @map("totp_enabled_at") @db.Timestamptz(3)
+  /// Last 30-second step accepted, so a code cannot be used twice.
+  totpLastStep       Int?      @map("totp_last_step")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -279,9 +290,24 @@ model User {
   notifications      NotificationLog[]   @relation("NotificationTriggeredBy")
   settingsUpdated    Setting[]           @relation("SettingUpdatedBy")
   auditLogs          AuditLog[]
+  recoveryCodes      RecoveryCode[]
 
   @@index([branchId])
   @@map("users")
+}
+
+/// Single-use two-factor recovery codes, stored as SHA-256 hashes (the codes are random, 50 bits each).
+model RecoveryCode {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @unique @map("code_hash")
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("recovery_codes")
 }
 
 // ─── Catalogue & stock ───────────────────────────────────────────────────────

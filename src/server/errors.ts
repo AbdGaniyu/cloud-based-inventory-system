@@ -1,3 +1,5 @@
+import type { SIGN_IN_STEPS } from "@/lib/validators/auth";
+
 /**
  * Domain errors thrown by services. Server actions convert them into `{ ok: false, error }`
  * (see src/server/action-result.ts); messages are written to be shown to the user as-is.
@@ -56,4 +58,11 @@ const RECORD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 export function requireRecordId(id: string, message = "That record does not exist."): string {
   if (!RECORD_ID.test(id)) throw new NotFoundError(message);
   return id;
+}
+
+/** A sign-in step the login form recognises by its code (next-auth passes the message through). */
+export class SignInStepError extends AppError {
+  constructor(step: (typeof SIGN_IN_STEPS)[keyof typeof SIGN_IN_STEPS]) {
+    super(step, "UNAUTHENTICATED");
+  }
 }

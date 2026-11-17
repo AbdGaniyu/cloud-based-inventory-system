@@ -16,6 +16,7 @@
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
     "cron:local": "tsx --env-file-if-exists=.env scripts/cron-local.ts",
+    "user:reset-2fa": "tsx --env-file-if-exists=.env scripts/reset-two-factor.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

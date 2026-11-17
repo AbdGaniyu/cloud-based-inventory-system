@@ -28,6 +28,7 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
+        code: { label: "Authenticator or recovery code", type: "text" },
       },
       async authorize(credentials, req) {
         const parsed = loginSchema.safeParse(credentials);
@@ -42,6 +43,7 @@ export const authOptions: NextAuthOptions = {
         token.userId = user.id;
         token.role = user.role;
         token.branchId = user.branchId;
+        token.sv = user.sessionVersion;
       }
       return token;
     },

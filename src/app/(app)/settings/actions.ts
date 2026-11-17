@@ -14,6 +14,7 @@ import {
   updateBranchSchema,
   updateTemplateSchema,
   updateUserSchema,
+  userIdSchema,
 } from "@/lib/validators/settings";
 import { type ActionResult, runAction } from "@/server/action-result";
 import { requireActionSession } from "@/server/auth/session";
@@ -26,6 +27,7 @@ import {
   createUser,
   previewBranchClosure,
   resetUserPassword,
+  resetUserTwoFactor,
   updateBranch,
   updateBusinessSettings,
   updateUser,
@@ -78,6 +80,15 @@ export async function editUser(input: unknown): Promise<ActionResult<null>> {
 export async function setUserPassword(input: unknown): Promise<ActionResult<null>> {
   return runAction(async () => {
     await resetUserPassword(await requireActionSession(), parseInput(resetPasswordSchema, input));
+    done();
+    return null;
+  });
+}
+
+export async function clearUserTwoFactor(input: unknown): Promise<ActionResult<null>> {
+  return runAction(async () => {
+    await resetUserTwoFactor(await requireActionSession(), parseInput(userIdSchema, input));
+    done();
     return null;
   });
 }

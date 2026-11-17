@@ -74,6 +74,7 @@ open accounts to another store, cancels its live transfers and keeps its history
 | `DOCUMENT_SIGNING_SECRET` | yes | Signs the expiring PDF links sent to customers |
 | `SETTINGS_ENCRYPTION_KEY` | no | Encrypts provider keys saved in Settings (32 bytes, base64); derived from `AUTH_SECRET` when empty. Changing it makes saved keys unreadable |
 | `SEED_PASSWORD` | no | Password for seeded users (default `GadgetHub!2026`) |
+| `REQUIRE_OWNER_2FA` | no | `true`/`false` overrides the default (owners must use two-factor in production) |
 | `ALERT_WEBHOOK_URL`, `ALERT_PHONE` | no | Where operations alerts go (Slack/Discord webhook, SMS); see **Monitoring** |
 | `CLIENT_IP_HEADER`, `TRUSTED_PROXY_COUNT` | no | Where the sign-in rate limiter reads the client IP; nothing needed on Vercel |
 | `TEST_DATABASE_URL` / `E2E_DATABASE_URL` | no | Override the `_test` / `_e2e` databases used by the test suites |
@@ -93,6 +94,7 @@ open accounts to another store, cancels its live transfers and keeps its history
 | `pnpm test:e2e` | Playwright checkout smoke test (below) |
 | `pnpm db:seed` · `pnpm db:studio` | Seed sample data · Prisma Studio |
 | `pnpm cron:local [--run all\|<job>]` | Run the scheduled jobs against the dev server |
+| `pnpm user:reset-2fa <email>` | Last resort: turn off someone's two-factor from the server (e.g. the only owner lost their phone and codes) |
 
 A change is done when `pnpm lint && pnpm typecheck && pnpm test` pass.
 
@@ -138,6 +140,16 @@ A change is done when `pnpm lint && pnpm typecheck && pnpm test` pass.
   all IPs lock the account, 30 from one IP across accounts lock the IP. Someone guessing locks
   themselves out, not you; an owner's password reset lifts a lock. The client IP comes from a trusted
   source (see `CLIENT_IP_HEADER` / `TRUSTED_PROXY_COUNT`). POS manager approvals are throttled the same way.
+- **Two-factor sign-in** (Account security, under the avatar menu): any user can turn on an
+  authenticator app (TOTP); owners must in production. Secrets are stored encrypted, each 30-second
+  code works once, wrong codes count towards the sign-in lockout, and 10 single-use recovery codes
+  (stored hashed) cover a lost phone. An owner can reset someone else's two-factor in Settings → Users;
+  `pnpm user:reset-2fa` covers the only owner.
+- **Sessions end when they should**: a password reset, a change of role, branch or status, turning
+  two-factor on or off, changing your own password and "Sign out other devices" all sign the person
+  out everywhere else on their next click (sessions carry a version checked on every request).
+- **Temporary passwords**: a password the owner chose (new user, reset) must be replaced by the person
+  at first sign-in; until then they can open nothing but Account security.
 - **Secrets**: provider keys are stored AES-256-GCM encrypted and only ever shown as the last four
   characters; customer document links are HMAC-signed and expire.
 - **Seed safety**: `pnpm db:seed` refuses to run in production or on a database with real users.

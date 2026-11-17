@@ -6,7 +6,7 @@ import { LoginForm } from "@/app/(auth)/login/login-form";
 import { Skeleton } from "@/components/ui/skeleton";
 import { STORE } from "@/config/store";
 import { safeCallbackPath } from "@/lib/safe-redirect";
-import { getSessionContext } from "@/server/auth/session";
+import { getSessionState } from "@/server/auth/session";
 
 export const metadata: Metadata = { title: "Sign in" };
 
@@ -38,8 +38,9 @@ export default function LoginPage({ searchParams }: PageProps<"/login">) {
 async function LoginGate({ searchParams }: { searchParams: PageProps<"/login">["searchParams"] }) {
   const { callbackUrl } = await searchParams;
   const destination = safeCallbackPath(callbackUrl);
-  // Database-checked: a stale cookie for a deactivated user still sees the form.
-  if (await getSessionContext()) redirect(destination);
+  // Database-checked: a stale cookie for a deactivated (or signed-out-everywhere) user still sees the form.
+  const state = await getSessionState();
+  if (state) redirect(state.pending ? "/account" : destination);
   return <LoginForm callbackPath={destination} />;
 }
 

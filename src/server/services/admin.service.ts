@@ -21,7 +21,7 @@ import { getSetting } from "@/server/services/settings.service";
  * its before and after values; password hashes never appear in audit rows or responses.
  */
 
-const BCRYPT_COST = 12;
+export const BCRYPT_COST = 12;
 
 type Tx = Prisma.TransactionClient;
 
@@ -172,15 +172,37 @@ export async function updateBranch(ctx: Ctx, input: UpdateBranchInput): Promise<
 
 // ─── Users ─────────────────────────────────────────────────────────────────
 
-export type AdminUser = { id: string; name: string; email: string; role: Role; branchId: string | null; branchName: string | null; isActive: boolean; lastLoginAt: string | null };
+export type AdminUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  branchId: string | null;
+  branchName: string | null;
+  isActive: boolean;
+  lastLoginAt: string | null;
+  twoFactorEnabled: boolean;
+  mustChangePassword: boolean;
+};
 
 export async function listAdminUsers(ctx: Ctx): Promise<AdminUser[]> {
   assertCan(ctx, "user.manage");
   const users = await db.user.findMany({
-    select: { id: true, name: true, email: true, role: true, branchId: true, isActive: true, lastLoginAt: true, branch: { select: { name: true } } },
+    select: { id: true, name: true, email: true, role: true, branchId: true, isActive: true, lastLoginAt: true, totpEnabledAt: true, mustChangePassword: true, branch: { select: { name: true } } },
     orderBy: [{ isActive: "desc" }, { role: "asc" }, { name: "asc" }],
   });
-  return users.map((u) => ({ ...u, branchName: u.branch?.name ?? null, lastLoginAt: u.lastLoginAt?.toISOString() ?? null }));
+  return users.map((u) => ({
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: u.role,
+    branchId: u.branchId,
+    branchName: u.branch?.name ?? null,
+    isActive: u.isActive,
+    lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
+    twoFactorEnabled: u.totpEnabledAt !== null,
+    mustChangePassword: u.mustChangePassword,
+  }));
 }
 
 /** Owners see every branch (no branch); managers and cashiers belong to one active branch. */
@@ -200,7 +222,8 @@ export async function createUser(ctx: Ctx, input: CreateUserInput): Promise<{ id
   const branchId = await placement(input.role, input.branchId);
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_COST);
   return db.$transaction(async (tx) => {
-    const user = await tx.user.create({ data: { name: input.name, email: input.email, role: input.role, branchId, passwordHash }, select: { id: true } });
+    // The owner chose this password, so the person picks their own at first sign-in.
+    const user = await tx.user.create({ data: { name: input.name, email: input.email, role: input.role, branchId, passwordHash, mustChangePassword: true }, select: { id: true } });
     await writeAudit(tx, { userId: ctx.userId, branchId, action: "user.create", entityType: "User", entityId: user.id, after: { name: input.name, email: input.email, role: input.role, branchId } });
     return user;
   });
@@ -219,23 +242,39 @@ export async function updateUser(ctx: Ctx, input: UpdateUserInput): Promise<void
   }
   const branchId = await placement(input.role, input.branchId);
   const after = { name: input.name, role: input.role, branchId, isActive: input.isActive };
+  // A new role, branch or deactivation starts clean: their open sessions end.
+  const signOut = before.role !== input.role || before.branchId !== branchId || before.isActive !== input.isActive;
   await db.$transaction(async (tx) => {
-    await tx.user.update({ where: { id: input.id }, data: after });
+    await tx.user.update({ where: { id: input.id }, data: { ...after, ...(signOut ? { sessionVersion: { increment: 1 } } : {}) } });
     await writeAudit(tx, { userId: ctx.userId, branchId, action: "user.update", entityType: "User", entityId: input.id, before, after });
   });
 }
 
-/** Sets a new password; the person signs in with it and should change it. The hash is never logged. */
+/** Sets a temporary password: signs the person out everywhere, and they must choose their own at next sign-in. The hash is never logged. */
 export async function resetUserPassword(ctx: Ctx, input: { id: string; password: string }): Promise<void> {
   assertCan(ctx, "user.manage");
   const user = await db.user.findUnique({ where: { id: input.id }, select: { id: true, branchId: true, email: true } });
   if (!user) throw new NotFoundError("That user no longer exists.");
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_COST);
   await db.$transaction(async (tx) => {
-    await tx.user.update({ where: { id: input.id }, data: { passwordHash } });
+    await tx.user.update({ where: { id: input.id }, data: { passwordHash, mustChangePassword: true, sessionVersion: { increment: 1 } } });
     // A locked-out person can sign in with the new password straight away.
     await tx.authThrottle.deleteMany({ where: { OR: throttleKeysForAccount(user.email).map((k) => ({ key: k })) } });
-    await writeAudit(tx, { userId: ctx.userId, branchId: user.branchId, action: "user.resetPassword", entityType: "User", entityId: input.id, after: { passwordChanged: true } });
+    await writeAudit(tx, { userId: ctx.userId, branchId: user.branchId, action: "user.resetPassword", entityType: "User", entityId: input.id, after: { passwordChanged: true, signedOutEverywhere: true } });
+  });
+}
+
+/** For a lost phone: turns the person's two-factor off and signs them out (an owner who needs it sets it up again at next sign-in). */
+export async function resetUserTwoFactor(ctx: Ctx, input: { id: string }): Promise<void> {
+  assertCan(ctx, "user.manage");
+  if (input.id === ctx.userId) throw new ValidationError("Turn your own two-factor off from Account security.");
+  const user = await db.user.findUnique({ where: { id: input.id }, select: { branchId: true, totpEnabledAt: true } });
+  if (!user) throw new NotFoundError("That user no longer exists.");
+  if (!user.totpEnabledAt) throw new ConflictError("Two-factor sign-in is not on for this person.");
+  await db.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: input.id }, data: { totpSecret: Prisma.DbNull, totpEnabledAt: null, totpLastStep: null, sessionVersion: { increment: 1 } } });
+    await tx.recoveryCode.deleteMany({ where: { userId: input.id } });
+    await writeAudit(tx, { userId: ctx.userId, branchId: user.branchId, action: "user.resetTwoFactor", entityType: "User", entityId: input.id, after: { twoFactor: false, signedOutEverywhere: true } });
   });
 }
 
