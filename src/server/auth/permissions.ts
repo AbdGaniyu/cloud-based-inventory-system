@@ -51,6 +51,8 @@ type ActionResources = {
   "invoice.void": BranchResource & { createdAt: Date };
   "debt.waive": never;
   "payment.reverse": never;
+  /** Receiving a return (and refunding) at a branch. Late returns are owner-only (checked in the service). */
+  "return.create": BranchResource;
   "reminders.manage": BranchResource;
   "user.manage": never;
   "branch.manage": never;
@@ -104,6 +106,7 @@ export function can<A extends Action>(ctx: Ctx, action: A, resource?: ResourceFo
     case "installment.approve":
     case "intake.create":
     case "reminders.manage":
+    case "return.create":
       return ownBranch(ctx, r?.branchId as string | undefined);
     case "transfer.create":
     case "transfer.ship":

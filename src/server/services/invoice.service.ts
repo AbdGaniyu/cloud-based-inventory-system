@@ -422,6 +422,16 @@ export async function checkout(ctx: Ctx, input: CheckoutInput, options: { now?: 
         });
       }
 
+      if (input.swapReturnId) {
+        // A swap: this sale replaces goods returned on the linked return (CLAUDE.md §7.6).
+        const original = await tx.return.findUnique({ where: { id: input.swapReturnId }, select: { customerId: true, branchId: true, number: true } });
+        if (!original) throw new NotFoundError("The return for this swap no longer exists.");
+        if (original.customerId !== customer.id) throw new ValidationError(`The replacement sale must be for the customer on ${original.number}.`);
+        if (original.branchId !== branchId) throw new ValidationError(`Make the replacement sale at the branch that took ${original.number}.`);
+        const linked = await tx.return.updateMany({ where: { id: input.swapReturnId, replacementInvoiceId: null }, data: { replacementInvoiceId: invoice.id } });
+        if (linked.count !== 1) throw new ConflictError(`${original.number} already has a replacement sale.`);
+      }
+
       await writeAudit(tx, {
         userId: ctx.userId,
         branchId,
@@ -437,6 +447,7 @@ export async function checkout(ctx: Ctx, input: CheckoutInput, options: { now?: 
           units: resolved.flatMap((l) => (l.unitId ? [l.unitId] : [])),
           accessories: accessoryLines.map((l) => ({ productId: l.productId, quantity: l.quantity })),
           tradeInCredit: toDb(totals.tradeInCredit),
+          swapReturnId: input.swapReturnId ?? null,
           installment: planData
             ? { count: planData.schedule.length, firstDueDate: planData.firstDueDate, approvedById: planData.approvedById }
             : null,

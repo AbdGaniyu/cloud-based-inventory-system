@@ -20,12 +20,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { STORE } from "@/config/store";
 import { addMonths, type CalendarDate } from "@/lib/dates";
 import { installmentApproval } from "@/lib/installments";
-import { sum, ZERO } from "@/lib/money";
+import { formatMoney, sum, ZERO } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { type CheckoutFormValues, checkoutSchema, type TradeInInput } from "@/lib/validators/checkout";
 import type { CustomerOption } from "@/server/services/customer.service";
 import type { CheckoutSettings } from "@/server/services/invoice.service";
 import type { PosAccessory, PosBranch, PosCatalog, PosUnit } from "@/server/services/pos.service";
+import type { SwapContext } from "@/server/services/return.service";
 
 const SEARCH_DEBOUNCE_MS = 200;
 
@@ -50,6 +51,8 @@ export function PosScreen({
   canSelfApprove,
   today,
   deviceModels,
+  swap: swapContext,
+  swapError,
 }: {
   branch: PosBranch;
   isOwner: boolean;
@@ -62,6 +65,9 @@ export function PosScreen({
   canSelfApprove: boolean;
   today: CalendarDate;
   deviceModels: { id: string; name: string }[];
+  /** Replacement sale for a return (a swap): preselects the customer and links the invoice. */
+  swap: SwapContext | null;
+  swapError: string | null;
 }) {
   const router = useRouter();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -91,7 +97,8 @@ export function PosScreen({
 
   // ─── Cart ──────────────────────────────────────────────────────────────────
   const [lines, setLines] = useState<CartLine[]>([]);
-  const [customer, setCustomer] = useState<CustomerOption | null>(null);
+  const [swap, setSwap] = useState<SwapContext | null>(swapContext);
+  const [customer, setCustomer] = useState<CustomerOption | null>(swapContext?.customer ?? null);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [discount, setDiscount] = useState("");
   const [tradeIn, setTradeIn] = useState<TradeInInput | null>(null);
@@ -190,6 +197,7 @@ export function PosScreen({
       ),
       discount: discount || undefined,
       tradeIn: tradeIn ?? undefined,
+      swapReturnId: swap?.returnId,
       payment:
         paymentType === "FULL"
           ? { type: "FULL", payments: clean(payments) }
@@ -233,6 +241,10 @@ export function PosScreen({
   }
 
   function newSale() {
+    if (swap) {
+      setSwap(null);
+      router.replace("/pos");
+    }
     setLines([]);
     setCustomer(null);
     setDiscount("");
@@ -314,6 +326,29 @@ export function PosScreen({
               </p>
             )}
           </div>
+          {swapError && (
+            <p role="alert" className="rounded-xl border border-warning-border bg-warning-bg px-4 py-2.5 text-small text-warning">
+              {swapError} This sale will not be linked to a return.
+            </p>
+          )}
+          {swap && (
+            <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-info-border bg-info-bg px-4 py-2.5 text-small text-info">
+              <span>
+                Swap for <span className="font-mono">{swap.number}</span> · {swap.customer.name}
+                {Number(swap.refundAmount) > 0 ? ` · refunded ${formatMoney(swap.refundAmount)} on the return` : ""}. This sale will be linked to it.
+              </span>
+              <button
+                type="button"
+                className="font-medium underline-offset-4 hover:underline"
+                onClick={() => {
+                  setSwap(null);
+                  router.replace("/pos");
+                }}
+              >
+                Not a swap
+              </button>
+            </div>
+          )}
           <SearchField ref={searchRef} value={query} onChange={setQuery} onEnter={() => void onSearchEnter()} busy={searching} />
           <nav aria-label="Categories" className="flex flex-wrap gap-2">
             {[null, ...categories].map((cat) => (

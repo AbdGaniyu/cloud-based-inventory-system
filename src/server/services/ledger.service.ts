@@ -4,7 +4,7 @@ import { Prisma } from "@/generated/prisma/client";
 import type { InvoiceStatus, PaymentMethod, ScheduleStatus } from "@/generated/prisma/enums";
 import { addDays, type CalendarDate, daysBetween, fromDbDate, todayInStoreTz, toDbDate } from "@/lib/dates";
 import { allocateSchedule, deriveInvoiceStatus } from "@/lib/ledger";
-import { money, sum, toDb } from "@/lib/money";
+import { money, sum, toDb, ZERO } from "@/lib/money";
 import type { RecordPaymentInput, ReversePaymentInput, WaiveDebtInput } from "@/lib/validators/payment";
 import { assertCan, can, type Ctx } from "@/server/auth/permissions";
 import { db } from "@/server/db";
@@ -33,23 +33,30 @@ export type LedgerSnapshot = { amountPaid: string; adjustedAmount: string; balan
 /**
  * Rebuilds the invoice's cached ledger from its payment and adjustment rows: amount paid, balance,
  * status, every schedule row (instalment payments oldest-first, waivers newest-first) and the plan's
- * next due date and completion. Call inside the mutation's transaction after locking the invoice.
+ * next due date and completion. Return credit that went against the balance (rather than out as a
+ * refund) settles instalments newest-first, like a waiver. `fullyReturned` closes the invoice as
+ * RETURNED and cancels its plan. Call inside the mutation's transaction after locking the invoice.
  */
-export async function recomputeInvoiceLedger(tx: Tx, invoiceId: string, now: Date): Promise<LedgerSnapshot> {
+export async function recomputeInvoiceLedger(tx: Tx, invoiceId: string, now: Date, options: { fullyReturned?: boolean } = {}): Promise<LedgerSnapshot> {
   const today = todayInStoreTz(now);
   const invoice = await tx.invoice.findUniqueOrThrow({
     where: { id: invoiceId },
     include: { installmentPlan: { include: { schedule: { orderBy: { sequence: "asc" } } } } },
   });
-  const [payments, adjustments] = await Promise.all([
+  const [payments, adjustments, returns] = await Promise.all([
     tx.customerPayment.findMany({ where: { invoiceId }, select: { amount: true, kind: true } }),
     tx.invoiceAdjustment.findMany({ where: { invoiceId }, select: { amount: true } }),
+    tx.return.findMany({ where: { invoiceId }, select: { creditAmount: true } }),
   ]);
   const amountPaid = sum(payments.map((p) => p.amount));
   const adjustedAmount = sum(adjustments.map((a) => a.amount));
-  const balance = money(invoice.total).minus(invoice.returnedAmount).minus(adjustedAmount).minus(amountPaid);
+  const returnedAmount = sum(returns.map((r) => r.creditAmount));
+  const refunded = sum(payments.filter((p) => p.kind === "REFUND").map((p) => p.amount)).negated();
+  const creditLeft = returnedAmount.minus(refunded);
+  const returnCreditOnBalance = creditLeft.lt(0) ? ZERO : creditLeft;
+  const balance = money(invoice.total).minus(returnedAmount).minus(adjustedAmount).minus(amountPaid);
   if (balance.lt(0)) throw new ValidationError("That is more than the balance on this invoice.");
-  const status = deriveInvoiceStatus(invoice.status, { amountPaid, balance });
+  const status = options.fullyReturned ? "RETURNED" : deriveInvoiceStatus(invoice.status, { amountPaid, balance });
 
   let nextDueDate: CalendarDate | null = null;
   let settledSequences: number[] = [];
@@ -58,7 +65,7 @@ export async function recomputeInvoiceLedger(tx: Tx, invoiceId: string, now: Dat
     const previous = plan.schedule.map((r) => ({ sequence: r.sequence, status: r.status }));
     const allocation = allocateSchedule(
       plan.schedule.map((r) => ({ sequence: r.sequence, dueDate: fromDbDate(r.dueDate), amountDue: r.amountDue })),
-      { paid: sum(payments.filter((p) => p.kind === "INSTALLMENT").map((p) => p.amount)), waived: adjustedAmount, today },
+      { paid: sum(payments.filter((p) => p.kind === "INSTALLMENT").map((p) => p.amount)), waived: adjustedAmount.plus(returnCreditOnBalance), today },
       previous,
     );
     for (const row of allocation.rows) {
@@ -84,7 +91,7 @@ export async function recomputeInvoiceLedger(tx: Tx, invoiceId: string, now: Dat
       where: { id: plan.id },
       data: {
         nextDueDate: nextDueDate && !completed ? toDbDate(nextDueDate) : null,
-        status: completed ? "COMPLETED" : plan.status === "COMPLETED" ? "ACTIVE" : plan.status,
+        status: options.fullyReturned ? "CANCELLED" : completed ? "COMPLETED" : plan.status === "COMPLETED" ? "ACTIVE" : plan.status,
       },
     });
     if (completed) nextDueDate = null;
@@ -92,7 +99,7 @@ export async function recomputeInvoiceLedger(tx: Tx, invoiceId: string, now: Dat
 
   await tx.invoice.update({
     where: { id: invoiceId },
-    data: { amountPaid: toDb(amountPaid), adjustedAmount: toDb(adjustedAmount), balance: toDb(balance), status },
+    data: { amountPaid: toDb(amountPaid), adjustedAmount: toDb(adjustedAmount), returnedAmount: toDb(returnedAmount), balance: toDb(balance), status },
   });
   return { amountPaid: amountPaid.toFixed(2), adjustedAmount: adjustedAmount.toFixed(2), balance: balance.toFixed(2), status, nextDueDate, settledSequences };
 }

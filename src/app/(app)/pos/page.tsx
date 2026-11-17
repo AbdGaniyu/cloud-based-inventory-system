@@ -8,7 +8,9 @@ import { todayInStoreTz } from "@/lib/dates";
 import { can } from "@/server/auth/permissions";
 import { requirePageAccess } from "@/server/auth/session";
 import { db } from "@/server/db";
+import { AppError } from "@/server/errors";
 import { getCheckoutSettings } from "@/server/services/invoice.service";
+import { getSwapContext, type SwapContext } from "@/server/services/return.service";
 import { listPosStores, listSellableCategories, POS_BRANCH_COOKIE, quickPickAccessories, resolvePosBranch, searchCatalog } from "@/server/services/pos.service";
 
 export const metadata: Metadata = { title: "New sale" };
@@ -31,18 +33,31 @@ function PosSkeleton() {
   );
 }
 
-export default function PosPage() {
+export default function PosPage({ searchParams }: PageProps<"/pos">) {
   return (
     <Suspense fallback={<PosSkeleton />}>
-      <Content />
+      <Content searchParams={searchParams} />
     </Suspense>
   );
 }
 
-async function Content() {
+async function Content({ searchParams }: { searchParams: PageProps<"/pos">["searchParams"] }) {
   const ctx = await requirePageAccess("invoice.create");
+  const swapParam = (await searchParams).swap;
+  const swapId = typeof swapParam === "string" && /^[0-9a-f-]{36}$/i.test(swapParam) ? swapParam : null;
+  // ?swap=<returnId>: a replacement sale linked to a return (CLAUDE.md §7.6).
+  let swap: SwapContext | null = null;
+  let swapError: string | null = null;
+  if (swapId) {
+    try {
+      swap = await getSwapContext(ctx, swapId);
+    } catch (error) {
+      if (!(error instanceof AppError)) throw error;
+      swapError = error.message;
+    }
+  }
   const remembered = (await cookies()).get(POS_BRANCH_COOKIE)?.value;
-  const branch = await resolvePosBranch(ctx, remembered);
+  const branch = await resolvePosBranch(ctx, swap?.branchId ?? remembered);
   // Owner in all-branches view picks the selling store on the POS itself.
   const storeChoices = ctx.role === "OWNER" && ctx.activeBranchId === null ? await listPosStores(ctx) : null;
   const [initialCatalog, quickPicks, categories, settings, deviceModels] = await Promise.all([
@@ -67,6 +82,8 @@ async function Content() {
       canSelfApprove={can(ctx, "installment.approve", { branchId: branch.id })}
       today={todayInStoreTz()}
       deviceModels={deviceModels}
+      swap={swap}
+      swapError={swapError}
     />
   );
 }

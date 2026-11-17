@@ -47,6 +47,8 @@ export const checkoutSchema = z.object({
   lines: z.array(cartLineSchema).min(1, "Add at least one item").max(100),
   discount: optionalMoneyString,
   tradeIn: tradeInSchema.optional(),
+  /** Set when this sale replaces goods on a return (a swap). */
+  swapReturnId: z.guid().optional(),
   payment: z.discriminatedUnion("type", [
     z.object({ type: z.literal("FULL"), payments: z.array(paymentRow).min(1, "Add a payment").max(6) }),
     z.object({

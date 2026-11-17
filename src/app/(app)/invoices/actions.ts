@@ -4,12 +4,14 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
 
+import { returnSchema } from "@/lib/validators/return";
 import { type ActionResult, runAction } from "@/server/action-result";
 import { requireActionSession } from "@/server/auth/session";
 import { ValidationError } from "@/server/errors";
-import { deliverMessages } from "@/server/notifications";
-import type { QueuedMessage } from "@/server/notifications";
+import { deliverMessages, type QueuedMessage } from "@/server/notifications";
+import { parseInput } from "@/server/parse-input";
 import { listInvoiceMessages, type MessageView, resendMessage, sendInvoiceReminder } from "@/server/services/message.service";
+import { getReturnContext, processReturn, type ReturnContext, type ReturnResult } from "@/server/services/return.service";
 
 function id(input: unknown): string {
   const parsed = z.guid().safeParse(input);
@@ -41,4 +43,18 @@ export async function resendNotification(notificationId: unknown): Promise<Actio
 
 export async function invoiceMessages(invoiceId: unknown): Promise<ActionResult<MessageView[]>> {
   return runAction(async () => listInvoiceMessages(await requireActionSession(), id(invoiceId)));
+}
+
+export async function loadReturnContext(invoiceId: unknown): Promise<ActionResult<ReturnContext>> {
+  return runAction(async () => getReturnContext(await requireActionSession(), id(invoiceId)));
+}
+
+export async function submitReturn(input: unknown): Promise<ActionResult<ReturnResult>> {
+  return runAction(async () => {
+    const result = await processReturn(await requireActionSession(), parseInput(returnSchema, input));
+    revalidatePath("/invoices/[id]", "page");
+    revalidatePath("/inventory");
+    revalidatePath("/ledger/receivables");
+    return result;
+  });
 }

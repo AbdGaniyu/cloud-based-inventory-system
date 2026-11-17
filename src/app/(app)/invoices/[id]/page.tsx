@@ -8,6 +8,7 @@ import { invoiceMessages } from "@/app/(app)/invoices/actions";
 import { IdentifierChip } from "@/components/identifier-chip";
 import { ReversePaymentButton, WaiveDebtButton } from "@/components/ledger/owner-actions";
 import { RecordPaymentButton } from "@/components/ledger/record-payment-sheet";
+import { ReturnItemsButton } from "@/components/returns/return-sheet";
 import { MessageTimeline } from "@/components/notifications/message-timeline";
 import { Money } from "@/components/money";
 import { PageBody } from "@/components/shell/page-body";
@@ -24,6 +25,7 @@ import { can } from "@/server/auth/permissions";
 import { requirePageAccess } from "@/server/auth/session";
 import { NotFoundError } from "@/server/errors";
 import { getInvoiceDocument } from "@/server/services/document.service";
+import { listInvoiceReturns } from "@/server/services/return.service";
 import { listInvoiceMessages } from "@/server/services/message.service";
 
 export const metadata: Metadata = { title: "Invoice" };
@@ -60,13 +62,17 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
     if (error instanceof NotFoundError) notFound();
     throw error;
   });
-  const messages = can(ctx, "notification.view") ? await listInvoiceMessages(ctx, invoice.id) : null;
+  const [messages, returns] = await Promise.all([
+    can(ctx, "notification.view") ? listInvoiceMessages(ctx, invoice.id) : Promise.resolve(null),
+    listInvoiceReturns(ctx, invoice.id),
+  ]);
   const today = todayInStoreTz();
   const overdue = invoice.displayStatus === "OVERDUE";
   const warranties = invoice.items.filter((i) => i.warranty);
   const owing = invoice.status !== "VOID" && invoice.status !== "RETURNED" && Number(invoice.balance) > 0;
   const canCollect = owing && can(ctx, "payment.record");
   const canReverse = can(ctx, "payment.reverse") && invoice.status !== "VOID";
+  const canReturn = can(ctx, "return.create") && invoice.status !== "VOID" && invoice.status !== "RETURNED";
 
   return (
     <>
@@ -76,6 +82,7 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
           <div className="flex flex-wrap items-center gap-2">
             <InvoiceStatusBadge status={invoice.displayStatus} />
             {canCollect && <RecordPaymentButton invoiceId={invoice.id} variant="secondary" />}
+            {canReturn && <ReturnItemsButton invoiceId={invoice.id} />}
             <Button asChild variant="secondary">
               <Link href={`/print/receipt/${invoice.id}`} target="_blank" rel="noopener">
                 <Printer aria-hidden data-icon="inline-start" /> Print receipt
@@ -185,7 +192,7 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
                             <Money value={row.amountPaid} className="text-muted-foreground" />
                             {Number(row.amountWaived) > 0 && (
                               <span className="block text-small text-muted-foreground italic">
-                                <Money value={row.amountWaived} /> waived
+                                <Money value={row.amountWaived} /> credited
                               </span>
                             )}
                           </td>
@@ -225,6 +232,61 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
             )}
           </section>
 
+          {returns.length > 0 && (
+            <section aria-labelledby="returns-heading">
+              <SectionHeader id="returns-heading" title="Returns" />
+              <ul className="flex flex-col gap-3">
+                {returns.map((r) => (
+                  <li key={r.id} className="rounded-xl border border-border p-4 text-body">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p>
+                        <span className="font-mono">{r.number}</span>
+                        <span className="text-small text-muted-foreground"> · {dateTime.format(new Date(r.createdAt))} · {r.branchName} · {r.processedByName}</span>
+                      </p>
+                      <p className="text-small">
+                        Credit <Money value={r.creditAmount} className="font-medium" />
+                        {Number(r.refundAmount) > 0 && (
+                          <>
+                            {" "}· refunded <Money value={r.refundAmount} className="font-medium" />
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    <ul className="mt-2 text-small">
+                      {r.items.map((i) => (
+                        <li key={`${r.id}-${i.description}-${i.identifier ?? ""}`} className="flex flex-wrap items-center gap-2">
+                          <span>
+                            {i.quantity > 1 ? `${i.quantity} × ` : ""}
+                            {i.description}
+                          </span>
+                          {i.identifier && <span className="font-mono text-muted-foreground">{i.identifier}</span>}
+                          <Badge tone={i.disposition === "DEFECTIVE" ? "danger" : "neutral"} dot={false}>
+                            {i.disposition === "DEFECTIVE" ? "Defective" : "Back in stock"}
+                          </Badge>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-small text-muted-foreground">“{r.reason}”</p>
+                    {r.replacement ? (
+                      <p className="mt-1 text-small">
+                        Swapped for{" "}
+                        <Link href={`/invoices/${r.replacement.invoiceId}`} className="font-mono underline-offset-4 hover:underline">
+                          {r.replacement.number}
+                        </Link>
+                      </p>
+                    ) : (
+                      can(ctx, "invoice.create") && (
+                        <Link href={`/pos?swap=${r.id}`} className="mt-1 inline-block text-small underline-offset-4 hover:underline">
+                          Start a replacement sale (swap)
+                        </Link>
+                      )
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {messages && (
             <MessageTimeline
               subjectId={invoice.id}
@@ -240,6 +302,7 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
           <section aria-label="Balance" className={cn("rounded-xl border bg-card p-5", overdue ? "border-danger-border" : "border-border")}>
             <dl className="text-body">
               <TotalRow label="Total" value={<Money value={invoice.total} />} />
+              {Number(invoice.returnedAmount) > 0 && <TotalRow label="Returned" value={<Money value={`-${invoice.returnedAmount}`} />} />}
               <TotalRow label="Paid" value={<Money value={invoice.amountPaid} />} />
               <div className="mt-2 flex items-end justify-between border-t border-dashed border-border pt-3">
                 <dt className="font-medium">Balance</dt>
