@@ -50,6 +50,8 @@ type ActionResources = {
   "stock.adjust": never;
   "invoice.void": BranchResource & { createdAt: Date };
   "debt.waive": never;
+  "payment.reverse": never;
+  "reminders.manage": BranchResource;
   "user.manage": never;
   "branch.manage": never;
   "tax.manage": never;
@@ -101,6 +103,7 @@ export function can<A extends Action>(ctx: Ctx, action: A, resource?: ResourceFo
   switch (action) {
     case "installment.approve":
     case "intake.create":
+    case "reminders.manage":
       return ownBranch(ctx, r?.branchId as string | undefined);
     case "transfer.create":
     case "transfer.ship":

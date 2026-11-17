@@ -4,7 +4,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
+import { invoiceMessages } from "@/app/(app)/invoices/actions";
 import { IdentifierChip } from "@/components/identifier-chip";
+import { ReversePaymentButton, WaiveDebtButton } from "@/components/ledger/owner-actions";
+import { RecordPaymentButton } from "@/components/ledger/record-payment-sheet";
 import { MessageTimeline } from "@/components/notifications/message-timeline";
 import { Money } from "@/components/money";
 import { PageBody } from "@/components/shell/page-body";
@@ -61,6 +64,9 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
   const today = todayInStoreTz();
   const overdue = invoice.displayStatus === "OVERDUE";
   const warranties = invoice.items.filter((i) => i.warranty);
+  const owing = invoice.status !== "VOID" && invoice.status !== "RETURNED" && Number(invoice.balance) > 0;
+  const canCollect = owing && can(ctx, "payment.record");
+  const canReverse = can(ctx, "payment.reverse") && invoice.status !== "VOID";
 
   return (
     <>
@@ -69,6 +75,7 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <InvoiceStatusBadge status={invoice.displayStatus} />
+            {canCollect && <RecordPaymentButton invoiceId={invoice.id} variant="secondary" />}
             <Button asChild variant="secondary">
               <Link href={`/print/receipt/${invoice.id}`} target="_blank" rel="noopener">
                 <Printer aria-hidden data-icon="inline-start" /> Print receipt
@@ -92,7 +99,7 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
       <PageBody className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex min-w-0 flex-col gap-6">
           <section aria-labelledby="items-heading">
-            <SectionHeader title="Items" />
+            <SectionHeader id="items-heading" title="Items" />
             <div className="overflow-x-auto rounded-xl border border-border">
               <table className="w-full text-small">
                 <caption className="sr-only">Items on {invoice.number}</caption>
@@ -176,6 +183,11 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
                           </td>
                           <td className="px-3 text-right">
                             <Money value={row.amountPaid} className="text-muted-foreground" />
+                            {Number(row.amountWaived) > 0 && (
+                              <span className="block text-small text-muted-foreground italic">
+                                <Money value={row.amountWaived} /> waived
+                              </span>
+                            )}
                           </td>
                           <td className="px-3">
                             <ScheduleStatusBadge status={row.status} dueSoon={dueSoon} />
@@ -190,20 +202,23 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
           )}
 
           <section aria-labelledby="payments-heading">
-            <SectionHeader title="Payments" />
+            <SectionHeader id="payments-heading" title="Payments" />
             {invoice.payments.length === 0 ? (
               <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-body text-muted-foreground">No payments recorded yet.</p>
             ) : (
               <ul className="divide-y divide-border rounded-xl border border-border">
                 {invoice.payments.map((p) => (
-                  <li key={p.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-body">
+                  <li key={p.id} className={cn("flex flex-wrap items-center gap-3 px-4 py-3 text-body", p.reversed && "text-muted-foreground")}>
                     <span className="w-40 text-muted-foreground tabular-nums">{dateTime.format(new Date(p.paidAt))}</span>
                     <span className="flex-1">
-                      {KIND[p.kind]} · {METHOD[p.method]}
+                      {p.isReversal ? "Reversal" : KIND[p.kind]} · {METHOD[p.method]}
                       {p.branchName !== invoice.branch.name ? ` · at ${p.branchName}` : ""}
+                      {p.reversed && <Badge tone="neutral" className="ml-2">Reversed</Badge>}
+                      {p.isReversal && p.notes && <span className="block text-small text-muted-foreground">{p.notes}</span>}
                     </span>
                     {p.reference && <span className="font-mono text-small text-muted-foreground">{p.reference}</span>}
-                    <Money value={p.amount} className="font-medium" />
+                    <Money value={p.amount} className={cn("font-medium", p.reversed && "line-through")} />
+                    {canReverse && !p.isReversal && !p.reversed && p.kind !== "REFUND" && <ReversePaymentButton paymentId={p.id} amount={p.amount} />}
                   </li>
                 ))}
               </ul>
@@ -212,10 +227,11 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
 
           {messages && (
             <MessageTimeline
-              invoiceId={invoice.id}
+              subjectId={invoice.id}
+              load={invoiceMessages}
               initial={messages}
               canSend={can(ctx, "message.send")}
-              canRemind={invoice.status !== "VOID" && Number(invoice.balance) > 0}
+              reminderInvoiceId={owing ? invoice.id : null}
             />
           )}
         </div>
@@ -238,7 +254,21 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
                 {overdue && <Badge tone="danger" className="ml-2">Overdue</Badge>}
               </p>
             )}
-            <p className="mt-3 text-small text-muted-foreground">Recording repayments arrives with the receivables ledger (build step 8).</p>
+            {Number(invoice.adjustedAmount) > 0 && (
+              <p className="mt-2 text-small text-muted-foreground">
+                Includes <Money value={invoice.adjustedAmount} /> waived by the owner.
+              </p>
+            )}
+            {canCollect && (
+              <div className="mt-4 flex flex-col gap-2">
+                <RecordPaymentButton invoiceId={invoice.id} size="lg" className="w-full" />
+                {can(ctx, "debt.waive") && (
+                  <div className="text-center">
+                    <WaiveDebtButton invoiceId={invoice.id} balance={invoice.balance} />
+                  </div>
+                )}
+              </div>
+            )}
           </section>
 
           {warranties.length > 0 && (

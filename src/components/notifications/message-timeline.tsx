@@ -4,8 +4,8 @@ import { BellRing, MessageCircle, MessageSquareText, RotateCw } from "lucide-rea
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { invoiceMessages, resendNotification, sendReminder } from "@/app/(app)/invoices/actions";
-import { CHANNEL_LABEL, useInvoiceMessages } from "@/components/notifications/use-messages";
+import { resendNotification, sendReminder } from "@/app/(app)/invoices/actions";
+import { CHANNEL_LABEL, type LoadMessages, useInvoiceMessages } from "@/components/notifications/use-messages";
 import { Button } from "@/components/ui/button";
 import { NotificationStatusBadge } from "@/components/ui/status-badge";
 import { formatPhoneDisplay } from "@/lib/phone";
@@ -19,19 +19,26 @@ function queuedToast(message: { created: boolean; channel: "WHATSAPP" | "SMS"; s
   else toast.success(`${what} queued to ${CHANNEL_LABEL[message.channel]}`);
 }
 
-/** Invoice "Messages" timeline (DESIGN.md §5.3, §5.7): channel, template, status, body preview, Resend. */
+/**
+ * "Messages" timeline for an invoice or a customer (DESIGN.md §5.3, §5.10): channel, template,
+ * status, body preview, Resend; Send reminder when `reminderInvoiceId` is set.
+ */
 export function MessageTimeline({
-  invoiceId,
+  subjectId,
+  load,
   initial,
   canSend,
-  canRemind,
+  reminderInvoiceId = null,
+  emptyText = "No messages sent for this invoice yet.",
 }: {
-  invoiceId: string;
+  subjectId: string;
+  load: LoadMessages;
   initial: MessageView[];
   canSend: boolean;
-  canRemind: boolean;
+  reminderInvoiceId?: string | null;
+  emptyText?: string;
 }) {
-  const { messages, refresh } = useInvoiceMessages(invoiceId, invoiceMessages, initial);
+  const { messages, refresh } = useInvoiceMessages(subjectId, load, initial);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -56,14 +63,14 @@ export function MessageTimeline({
         <h2 id="messages-heading" className="text-h3">
           Messages
         </h2>
-        {canSend && canRemind && (
-          <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={() => run("reminder", "Reminder", () => sendReminder(invoiceId))}>
+        {canSend && reminderInvoiceId && (
+          <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={() => run("reminder", "Reminder", () => sendReminder(reminderInvoiceId))}>
             <BellRing aria-hidden data-icon="inline-start" /> {busyId === "reminder" ? "Sending…" : "Send reminder"}
           </Button>
         )}
       </div>
       {list.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-body text-muted-foreground">No messages sent for this invoice yet.</p>
+        <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-body text-muted-foreground">{emptyText}</p>
       ) : (
         <ol className="divide-y divide-border rounded-xl border border-border" aria-live="polite">
           {list.map((m) => {

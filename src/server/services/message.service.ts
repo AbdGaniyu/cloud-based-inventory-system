@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { Prisma } from "@/generated/prisma/client";
 import type { MessageChannel, NotificationStatus } from "@/generated/prisma/enums";
 import { type CalendarDate, todayInStoreTz } from "@/lib/dates";
 import { money } from "@/lib/money";
@@ -95,6 +96,34 @@ export async function queueCheckoutMessages(invoiceId: string, triggeredById: st
     if (message) queued.push(message);
   }
   return queued;
+}
+
+/**
+ * "We have received …" for a repayment, queued after the payment transaction commits. The balance is
+ * read from the invoice as it stands, so it reflects this payment.
+ */
+export async function queuePaymentConfirmation(paymentId: string, triggeredById: string | null, options: NotifyOptions = {}): Promise<QueuedMessage | null> {
+  const payment = await db.customerPayment.findUniqueOrThrow({
+    where: { id: paymentId },
+    include: { branch: { select: { name: true } }, customer: { select: { name: true } }, invoice: { select: { number: true, balance: true } } },
+  });
+  return queueMessage(
+    {
+      templateKey: "payment_confirmation",
+      customerId: payment.customerId,
+      invoiceId: payment.invoiceId,
+      dedupeKey: `payment_confirmation:${payment.id}`,
+      variables: {
+        customer_name: firstName(payment.customer.name),
+        amount_paid: messageMoney(payment.amount),
+        invoice_number: payment.invoice.number,
+        branch_name: payment.branch.name,
+        balance_remaining: messageMoney(payment.invoice.balance),
+      },
+      triggeredById,
+    },
+    options,
+  );
 }
 
 /** Two clicks within the same minute are one request, not two messages. */
@@ -220,10 +249,29 @@ export async function listInvoiceMessages(ctx: Ctx, invoiceId: string): Promise<
   const invoice = await db.invoice.findUnique({ where: { id: invoiceId }, select: { branchId: true } });
   if (!invoice) throw new NotFoundError("That invoice no longer exists.");
   assertBranchAccess(ctx, invoice.branchId);
+  return loadMessages({ invoiceId });
+}
+
+const MESSAGE_LIST_LIMIT = 100;
+
+/**
+ * Messages to one customer, newest first (customer profile). Non-owners see messages about their
+ * own branch's invoices plus those tied to no invoice.
+ */
+export async function listCustomerMessages(ctx: Ctx, customerId: string): Promise<MessageView[]> {
+  assertCan(ctx, "notification.view");
+  return loadMessages({
+    customerId,
+    ...(ctx.role === "OWNER" ? {} : { OR: [{ invoiceId: null }, { invoice: { branchId: ctx.branchId ?? undefined } }] }),
+  });
+}
+
+async function loadMessages(where: Prisma.NotificationLogWhereInput): Promise<MessageView[]> {
   const rows = await db.notificationLog.findMany({
-    where: { invoiceId },
+    where,
     include: { triggeredBy: { select: { name: true } } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: MESSAGE_LIST_LIMIT,
   });
   return rows.map((r) => ({
     id: r.id,

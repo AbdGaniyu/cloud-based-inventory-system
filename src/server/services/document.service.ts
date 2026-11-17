@@ -58,14 +58,27 @@ export type InvoiceDocument = {
   adjustedAmount: string;
   amountPaid: string;
   balance: string;
-  payments: { id: string; paidAt: string; method: PaymentMethod; reference: string | null; amount: string; kind: CustomerPaymentKind; branchName: string }[];
+  payments: {
+    id: string;
+    paidAt: string;
+    method: PaymentMethod;
+    reference: string | null;
+    amount: string;
+    kind: CustomerPaymentKind;
+    branchName: string;
+    /** This row cancels an earlier payment (negative amount). */
+    isReversal: boolean;
+    /** An offsetting row has cancelled this payment. */
+    reversed: boolean;
+    notes: string | null;
+  }[];
   plan: {
     downPayment: string;
     financedAmount: string;
     frequency: InstallmentFrequency;
     numberOfInstallments: number;
     nextDueDate: CalendarDate | null;
-    schedule: { sequence: number; dueDate: CalendarDate; amountDue: string; amountPaid: string; status: ScheduleStatus }[];
+    schedule: { sequence: number; dueDate: CalendarDate; amountDue: string; amountPaid: string; amountWaived: string; status: ScheduleStatus }[];
   } | null;
   tradeIn: { description: string; creditAmount: string } | null;
   voidReason: string | null;
@@ -90,7 +103,7 @@ export async function loadInvoiceDocument(id: string, today: CalendarDate = toda
           },
           orderBy: { id: "asc" },
         },
-        payments: { include: { branch: { select: { name: true } } }, orderBy: { paidAt: "asc" } },
+        payments: { include: { branch: { select: { name: true } }, reversedBy: { select: { id: true } } }, orderBy: { paidAt: "asc" } },
         installmentPlan: { include: { schedule: { orderBy: { sequence: "asc" } } } },
         tradeIns: { select: { description: true, creditAmount: true } },
       },
@@ -105,7 +118,7 @@ export async function loadInvoiceDocument(id: string, today: CalendarDate = toda
       const unpaid = row.amountPaid.lt(row.amountDue);
       // The nightly job marks rows OVERDUE; documents shouldn't wait for it.
       const status: ScheduleStatus = unpaid && dueDate < today && (row.status === "PENDING" || row.status === "PARTIAL") ? "OVERDUE" : row.status;
-      return { sequence: row.sequence, dueDate, amountDue: row.amountDue.toFixed(2), amountPaid: row.amountPaid.toFixed(2), status };
+      return { sequence: row.sequence, dueDate, amountDue: row.amountDue.toFixed(2), amountPaid: row.amountPaid.toFixed(2), amountWaived: row.amountWaived.toFixed(2), status };
     }) ?? [];
   const overdue = invoice.status !== "VOID" && invoice.status !== "PAID" && schedule.some((r) => r.status === "OVERDUE");
 
@@ -151,6 +164,9 @@ export async function loadInvoiceDocument(id: string, today: CalendarDate = toda
       amount: p.amount.toFixed(2),
       kind: p.kind,
       branchName: p.branch.name,
+      isReversal: p.reversalOfId !== null,
+      reversed: p.reversedBy !== null,
+      notes: p.notes,
     })),
     plan: invoice.installmentPlan
       ? {

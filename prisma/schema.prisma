@@ -718,6 +718,8 @@ model InstallmentPlan {
   approvedById         String?               @map("approved_by_id") @db.Uuid
   approvedAt           DateTime?             @map("approved_at") @db.Timestamptz(3)
   status               InstallmentPlanStatus @default(ACTIVE)
+  /// Automated due/overdue reminders for this plan (manual reminders are always allowed).
+  remindersEnabled     Boolean               @default(true) @map("reminders_enabled")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -733,15 +735,17 @@ model InstallmentPlan {
 }
 
 model InstallmentSchedule {
-  id         String         @id @default(uuid(7)) @db.Uuid
-  planId     String         @map("plan_id") @db.Uuid
-  sequence   Int
-  dueDate    DateTime       @map("due_date") @db.Date
-  amountDue  Decimal        @map("amount_due") @db.Decimal(14, 2)
+  id           String         @id @default(uuid(7)) @db.Uuid
+  planId       String         @map("plan_id") @db.Uuid
+  sequence     Int
+  dueDate      DateTime       @map("due_date") @db.Date
+  amountDue    Decimal        @map("amount_due") @db.Decimal(14, 2)
   /// Cached allocation of installment payments (oldest row first), recomputed with each payment.
-  amountPaid Decimal        @default(0) @map("amount_paid") @db.Decimal(14, 2)
-  status     ScheduleStatus @default(PENDING)
-  paidAt     DateTime?      @map("paid_at") @db.Timestamptz(3)
+  amountPaid   Decimal        @default(0) @map("amount_paid") @db.Decimal(14, 2)
+  /// Cached allocation of owner waivers (newest row first). amountPaid + amountWaived ≤ amountDue.
+  amountWaived Decimal        @default(0) @map("amount_waived") @db.Decimal(14, 2)
+  status       ScheduleStatus @default(PENDING)
+  paidAt       DateTime?      @map("paid_at") @db.Timestamptz(3)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)

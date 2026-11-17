@@ -136,7 +136,7 @@ async function Content({ params, searchParams }: { params: PageProps<"/transfers
           <ReceivePanel transferId={transfer.id} number={transfer.number} items={transfer.items} />
         ) : (
           <section aria-labelledby="manifest-heading">
-            <SectionHeader title="Manifest" description={<span className="flex items-center gap-1.5 font-mono text-small">{transfer.from.code} <ArrowRight aria-label="to" className="size-3.5" /> {transfer.to.code}</span>} />
+            <SectionHeader id="manifest-heading" title="Manifest" description={<span className="flex items-center gap-1.5 font-mono text-small">{transfer.from.code} <ArrowRight aria-label="to" className="size-3.5" /> {transfer.to.code}</span>} />
             <div className="overflow-x-auto rounded-xl border border-border">
               <table className="w-full text-small">
                 <caption className="sr-only">Items on {transfer.number}</caption>
@@ -174,7 +174,7 @@ async function Content({ params, searchParams }: { params: PageProps<"/transfers
         )}
 
         <section aria-labelledby="activity-heading">
-          <SectionHeader title="Activity" />
+          <SectionHeader id="activity-heading" title="Activity" />
           <ol className="relative ml-3 border-l border-border">
             {events.map((event) => (
               <li key={event.title} className="mb-4 ml-5 last:mb-0">

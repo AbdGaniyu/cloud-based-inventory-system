@@ -3,7 +3,7 @@
 Multi-branch inventory, POS invoicing, credit ledger and automated customer messaging for a gadget retailer.
 Project rules live in [`CLAUDE.md`](./CLAUDE.md); visual rules in [`DESIGN.md`](./DESIGN.md).
 
-> Status: build steps 1–7 of 13 done (database + seed; auth, RBAC, shell; inventory + stock intake; transfers + waybill; POS checkout with installments; invoice PDF, thermal receipt, warranty certificate + public check page; WhatsApp/SMS messaging with fallback, delivery webhooks and post-checkout receipts). Full setup docs land in step 13.
+> Status: build steps 1–8 of 13 done (database + seed; auth, RBAC, shell; inventory + stock intake; transfers + waybill; POS checkout with installments; invoice PDF, thermal receipt, warranty certificate + public check page; WhatsApp/SMS messaging with fallback, delivery webhooks and post-checkout receipts; receivables with payment confirmations, waivers and reversals; payables with supplier payouts; customer and supplier profiles). Full setup docs land in step 13.
 
 ## Local setup
 

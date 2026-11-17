@@ -164,7 +164,7 @@ function InvoiceDocumentPdf({ invoice }: { invoice: InvoiceDocument }) {
                 <View key={p.id} style={s.row}>
                   <Text style={{ width: 80 }}>{formatInstantDate(p.paidAt)}</Text>
                   <Text style={{ flex: 1 }}>
-                    {PAYMENT_KIND_WORDS[p.kind]}
+                    {p.isReversal ? "Reversal" : PAYMENT_KIND_WORDS[p.kind]}
                     {p.branchName !== invoice.branch.name ? ` (${p.branchName})` : ""}
                   </Text>
                   <Text style={{ width: 80 }}>{METHOD_WORDS[p.method]}</Text>
