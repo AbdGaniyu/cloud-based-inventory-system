@@ -62,8 +62,22 @@ enum UnitStatus {
   RETURNED
   DEFECTIVE
   TRADED_IN
+  /// Lost, stolen or scrapped (a stock adjustment); kept for the record, never sellable.
+  WRITTEN_OFF
 
   @@map("unit_status")
+}
+
+enum StockAdjustmentReason {
+  DAMAGED
+  LOST
+  STOLEN
+  FOUND
+  REPAIRED
+  COUNT_CORRECTION
+  OTHER
+
+  @@map("stock_adjustment_reason")
 }
 
 enum TransferStatus {
@@ -240,20 +254,23 @@ model Branch {
   auditLogs        AuditLog[]
   stockAlerts      StockAlert[]
 
+  stockCounts      StockCount[]
+  stockAdjustments StockAdjustment[]
+
   @@map("branches")
 }
 
 model User {
-  id           String    @id @default(uuid(7)) @db.Uuid
-  name         String
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  name               String
   /// Stored lowercased.
-  email        String    @unique
-  passwordHash String    @map("password_hash")
-  role         Role
+  email              String    @unique
+  passwordHash       String    @map("password_hash")
+  role               Role
   /// Null for OWNER (all branches); required for BRANCH_MANAGER and CASHIER (CHECK in migration).
-  branchId     String?   @map("branch_id") @db.Uuid
-  isActive     Boolean   @default(true) @map("is_active")
-  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(3)
+  branchId           String?   @map("branch_id") @db.Uuid
+  isActive           Boolean   @default(true) @map("is_active")
+  lastLoginAt        DateTime? @map("last_login_at") @db.Timestamptz(3)
   /// Bumped to sign the user out everywhere (password reset or change, role or branch change, 2FA change,
   /// "sign out other devices"). Session tokens carry the version they were issued with.
   sessionVersion     Int       @default(0) @map("session_version")
@@ -291,6 +308,9 @@ model User {
   settingsUpdated    Setting[]           @relation("SettingUpdatedBy")
   auditLogs          AuditLog[]
   recoveryCodes      RecoveryCode[]
+
+  stockCounts      StockCount[]      @relation("StockCountCreatedBy")
+  stockAdjustments StockAdjustment[] @relation("StockAdjustmentCreatedBy")
 
   @@index([branchId])
   @@map("users")
@@ -338,6 +358,8 @@ model Product {
   invoiceItems       InvoiceItem[]
   tradeIns           TradeIn[]
   stockAlerts        StockAlert[]
+
+  stockAdjustments StockAdjustment[]
 
   @@index([category])
   @@index([brand])
@@ -410,6 +432,8 @@ model SerializedUnit {
   returnItems   ReturnItem[]
   warrantyCards WarrantyCard[]
   stockAlerts   StockAlert[]
+
+  stockAdjustments StockAdjustment[]
 
   @@index([productId])
   @@index([branchId, status])
@@ -1152,4 +1176,63 @@ model OpsAlert {
   suppressed Int      @default(0)
 
   @@map("ops_alerts")
+}
+
+// ─── Stock adjustments ───────────────────────────────────────────────────────
+
+/// A stock count of one branch: the counted lines that differed became StockAdjustments.
+model StockCount {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  branchId     String   @map("branch_id") @db.Uuid
+  note         String?
+  /// How many accessory lines and devices were checked (matching ones produce no adjustment).
+  linesCounted Int      @map("lines_counted")
+  unitsCounted Int      @map("units_counted")
+  createdById  String   @map("created_by_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  branch      Branch            @relation(fields: [branchId], references: [id])
+  createdBy   User              @relation("StockCountCreatedBy", fields: [createdById], references: [id])
+  adjustments StockAdjustment[]
+
+  @@index([branchId, createdAt])
+  @@index([createdById])
+  @@map("stock_counts")
+}
+
+/// A stock change that is not a sale, intake, transfer or return: damage, loss, theft, a find, a
+/// repair or a count correction. Append-only; a mistake is fixed with another adjustment.
+model StockAdjustment {
+  id               String                @id @default(uuid(7)) @db.Uuid
+  branchId         String                @map("branch_id") @db.Uuid
+  productId        String                @map("product_id") @db.Uuid
+  serializedUnitId String?               @map("serialized_unit_id") @db.Uuid
+  /// Change in sellable stock: accessories by quantity; a device +1 back to IN_STOCK, -1 out of it, 0 otherwise.
+  quantityChange   Int                   @map("quantity_change")
+  /// Accessories: shelf quantity before and after.
+  quantityBefore   Int?                  @map("quantity_before")
+  quantityAfter    Int?                  @map("quantity_after")
+  /// Devices: status before and after.
+  fromStatus       UnitStatus?           @map("from_status")
+  toStatus         UnitStatus?           @map("to_status")
+  reason           StockAdjustmentReason
+  note             String?
+  /// Cost per unit at the time, for the value of the loss or gain (owner-only data).
+  unitCost         Decimal               @map("unit_cost") @db.Decimal(14, 2)
+  stockCountId     String?               @map("stock_count_id") @db.Uuid
+  createdById      String                @map("created_by_id") @db.Uuid
+  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  branch         Branch          @relation(fields: [branchId], references: [id])
+  product        Product         @relation(fields: [productId], references: [id])
+  serializedUnit SerializedUnit? @relation(fields: [serializedUnitId], references: [id])
+  stockCount     StockCount?     @relation(fields: [stockCountId], references: [id])
+  createdBy      User            @relation("StockAdjustmentCreatedBy", fields: [createdById], references: [id])
+
+  @@index([branchId, createdAt])
+  @@index([productId])
+  @@index([serializedUnitId])
+  @@index([stockCountId])
+  @@index([createdById])
+  @@map("stock_adjustments")
 }

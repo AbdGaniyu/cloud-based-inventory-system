@@ -5,6 +5,7 @@ import { after } from "next/server";
 import { z } from "zod";
 
 import { returnSchema } from "@/lib/validators/return";
+import { voidInvoiceSchema } from "@/lib/validators/void";
 import { type ActionResult, runAction } from "@/server/action-result";
 import { requireActionSession } from "@/server/auth/session";
 import { ValidationError } from "@/server/errors";
@@ -12,6 +13,7 @@ import { deliverMessages, type QueuedMessage } from "@/server/notifications";
 import { parseInput } from "@/server/parse-input";
 import { listInvoiceMessages, type MessageView, resendMessage, sendInvoiceReminder } from "@/server/services/message.service";
 import { getReturnContext, processReturn, type ReturnContext, type ReturnResult } from "@/server/services/return.service";
+import { previewVoid, type VoidPreview, type VoidResult, voidInvoice } from "@/server/services/void.service";
 
 function id(input: unknown): string {
   const parsed = z.guid().safeParse(input);
@@ -55,6 +57,22 @@ export async function submitReturn(input: unknown): Promise<ActionResult<ReturnR
     revalidatePath("/invoices/[id]", "page");
     revalidatePath("/inventory");
     revalidatePath("/ledger/receivables");
+    return result;
+  });
+}
+
+export async function loadVoidPreview(invoiceId: unknown): Promise<ActionResult<VoidPreview>> {
+  return runAction(async () => previewVoid(await requireActionSession(), id(invoiceId)));
+}
+
+export async function submitVoid(input: unknown): Promise<ActionResult<VoidResult>> {
+  return runAction(async () => {
+    const result = await voidInvoice(await requireActionSession(), parseInput(voidInvoiceSchema, input));
+    revalidatePath("/invoices/[id]", "page");
+    revalidatePath("/invoices");
+    revalidatePath("/inventory");
+    revalidatePath("/ledger/receivables");
+    revalidatePath("/dashboard");
     return result;
   });
 }

@@ -39,12 +39,13 @@ export const PAYMENT_KIND_WORDS: Record<CustomerPaymentKind, string> = {
   REFUND: "Refund",
 };
 
-export const SCHEDULE_WORDS: Record<ScheduleStatus, string> = {
+export const SCHEDULE_WORDS: Record<ScheduleStatus | "CANCELLED", string> = {
   PENDING: "Pending",
   PARTIAL: "Part paid",
   PAID: "Paid",
   OVERDUE: "Overdue",
   WAIVED: "Waived",
+  CANCELLED: "Cancelled",
 };
 
 export const FREQUENCY_WORDS: Record<InstallmentFrequency, string> = { WEEKLY: "weekly", BI_WEEKLY: "every two weeks", MONTHLY: "monthly" };

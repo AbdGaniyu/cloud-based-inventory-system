@@ -22,6 +22,7 @@ const STATUS_LABELS: Record<UnitStatus, string> = {
   RETURNED: "Returned",
   TRADED_IN: "Traded in",
   DEFECTIVE: "Defective",
+  WRITTEN_OFF: "Written off",
 };
 
 /** Days-in-stock colour: Warning from 15 days before the aging threshold, Danger past it (DESIGN.md §5.7). */

@@ -6,6 +6,7 @@ import { STORE } from "@/config/store";
 import { Prisma } from "@/generated/prisma/client";
 import type { TrackingType, UnitCondition, UnitStatus } from "@/generated/prisma/enums";
 import { calendarDateInStoreTz, daysBetween } from "@/lib/dates";
+import { REASON_LABELS } from "@/lib/stock-adjustments";
 import { money, toDb } from "@/lib/money";
 import { stripCostFields, type Visible } from "@/server/auth/field-access";
 import { assertCan, can, type Ctx } from "@/server/auth/permissions";
@@ -244,7 +245,7 @@ export async function listSerializedUnits(
 
 export type UnitEvent = {
   at: string;
-  kind: "received" | "traded_in" | "transfer_shipped" | "transfer_received" | "transfer_cancelled" | "sold" | "returned";
+  kind: "received" | "traded_in" | "transfer_shipped" | "transfer_received" | "transfer_cancelled" | "sold" | "returned" | "sale_voided" | "adjusted";
   title: string;
   meta: string;
   href?: string;
@@ -280,7 +281,8 @@ export async function getUnitDetail(ctx: Ctx, unitId: string, now: Date = new Da
           },
         },
       },
-      invoiceItems: { select: { invoice: { select: { id: true, number: true, createdAt: true, branch: { select: { code: true } } } } } },
+      invoiceItems: { select: { invoice: { select: { id: true, number: true, createdAt: true, status: true, voidedAt: true, voidReason: true, branch: { select: { code: true } } } } } },
+      stockAdjustments: { select: { createdAt: true, fromStatus: true, toStatus: true, reason: true, note: true, branch: { select: { code: true } }, createdBy: { select: { name: true } } } },
       returnItems: { select: { disposition: true, return: { select: { number: true, createdAt: true, branch: { select: { code: true } } } } } },
       tradeIn: { select: { createdAt: true, invoice: { select: { number: true } }, branch: { select: { code: true } } } },
     },
@@ -326,6 +328,9 @@ export async function getUnitDetail(ctx: Ctx, unitId: string, now: Date = new Da
   }
   for (const item of unit.invoiceItems) {
     events.push({ at: item.invoice.createdAt.toISOString(), kind: "sold", title: `Sold on ${item.invoice.number}`, meta: item.invoice.branch.code });
+    if (item.invoice.status === "VOID" && item.invoice.voidedAt) {
+      events.push({ at: item.invoice.voidedAt.toISOString(), kind: "sale_voided", title: `Sale ${item.invoice.number} voided`, meta: `Back in stock · ${item.invoice.voidReason ?? ""}`, href: `/invoices/${item.invoice.id}` });
+    }
   }
   for (const item of unit.returnItems) {
     events.push({
@@ -333,6 +338,14 @@ export async function getUnitDetail(ctx: Ctx, unitId: string, now: Date = new Da
       kind: "returned",
       title: `Returned on ${item.return.number}`,
       meta: `${item.return.branch.code} · ${item.disposition === "DEFECTIVE" ? "marked defective" : "restocked"}`,
+    });
+  }
+  for (const a of unit.stockAdjustments) {
+    events.push({
+      at: a.createdAt.toISOString(),
+      kind: "adjusted",
+      title: `${UNIT_STATUS_WORDS[a.fromStatus ?? "IN_STOCK"]} → ${UNIT_STATUS_WORDS[a.toStatus ?? "IN_STOCK"]} (${REASON_LABELS[a.reason].toLowerCase()})`,
+      meta: `${a.branch.code} · ${a.createdBy.name}${a.note ? ` · ${a.note}` : ""}`,
     });
   }
   events.sort((a, b) => a.at.localeCompare(b.at));
@@ -613,3 +626,13 @@ export async function acceptTradeIn(ctx: Ctx, input: AcceptTradeInInput): Promis
 export async function countPendingTradeIns(ctx: Ctx): Promise<number> {
   return db.serializedUnit.count({ where: { status: "TRADED_IN", ...(ctx.activeBranchId ? { branchId: ctx.activeBranchId } : {}) } });
 }
+
+const UNIT_STATUS_WORDS: Record<UnitStatus, string> = {
+  IN_STOCK: "In stock",
+  IN_TRANSIT: "In transit",
+  SOLD: "Sold",
+  RETURNED: "Returned",
+  DEFECTIVE: "Defective",
+  TRADED_IN: "Traded in",
+  WRITTEN_OFF: "Written off",
+};

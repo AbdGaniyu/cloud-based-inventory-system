@@ -4,12 +4,15 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { productSchema } from "@/lib/validators/product";
+import { accessoryAdjustmentSchema, stockCountSchema, unitAdjustmentSchema } from "@/lib/validators/stock";
 import { acceptTradeInSchema } from "@/lib/validators/unit";
 import { acceptTradeIn } from "@/server/services/inventory.service";
 import { type ActionResult, runAction } from "@/server/action-result";
 import { requireActionSession } from "@/server/auth/session";
 import { ValidationError } from "@/server/errors";
+import { parseInput } from "@/server/parse-input";
 import { createProduct, updateProduct } from "@/server/services/product.service";
+import { adjustAccessory, adjustUnit, applyStockCount, type CountReview, reviewStockCount } from "@/server/services/stock-adjustment.service";
 
 const saveProductSchema = z.object({ id: z.guid().optional(), product: productSchema });
 
@@ -42,5 +45,34 @@ export async function releaseTradeIn(input: unknown): Promise<ActionResult<null>
     await acceptTradeIn(await requireActionSession(), parsed.data);
     revalidatePath("/inventory");
     return null;
+  });
+}
+
+export async function adjustAccessoryStock(input: unknown): Promise<ActionResult<{ quantityBefore: number; quantityAfter: number }>> {
+  return runAction(async () => {
+    const result = await adjustAccessory(await requireActionSession(), parseInput(accessoryAdjustmentSchema, input));
+    revalidatePath("/inventory");
+    return result;
+  });
+}
+
+export async function adjustUnitStatus(input: unknown): Promise<ActionResult<{ status: string }>> {
+  return runAction(async () => {
+    const result = await adjustUnit(await requireActionSession(), parseInput(unitAdjustmentSchema, input));
+    revalidatePath("/inventory");
+    return result;
+  });
+}
+
+export async function reviewCount(input: unknown): Promise<ActionResult<CountReview>> {
+  return runAction(async () => reviewStockCount(await requireActionSession(), parseInput(stockCountSchema, input)));
+}
+
+export async function applyCount(input: unknown): Promise<ActionResult<{ stockCountId: string; adjustments: number }>> {
+  return runAction(async () => {
+    const result = await applyStockCount(await requireActionSession(), parseInput(stockCountSchema, input));
+    revalidatePath("/inventory");
+    revalidatePath("/dashboard");
+    return result;
   });
 }

@@ -1,10 +1,11 @@
-import { PackagePlus, Plus } from "lucide-react";
+import { ClipboardList, PackagePlus, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { z } from "zod";
 
 import { AccessoriesTable } from "@/app/(app)/inventory/accessories-table";
+import { AdjustmentsTable } from "@/app/(app)/inventory/adjustments-table";
 import { ProductSheet } from "@/app/(app)/inventory/product-sheet";
 import { ProductsTable } from "@/app/(app)/inventory/products-table";
 import { UnitSheet } from "@/app/(app)/inventory/unit-sheet";
@@ -33,12 +34,13 @@ import {
   type UnitDetail,
 } from "@/server/services/inventory.service";
 import { getProductForEdit } from "@/server/services/product.service";
+import { listAdjustments } from "@/server/services/stock-adjustment.service";
 
 export const metadata: Metadata = { title: "Inventory" };
 
 const flag = z.literal("1").optional().catch(undefined);
 const paramsSchema = z.object({
-  tab: z.enum(["units", "accessories", "products"]).catch("units"),
+  tab: z.enum(["units", "accessories", "products", "adjustments"]).catch("units"),
   q: z.string().trim().max(100).optional().catch(undefined),
   status: z.union([z.enum(UnitStatus), z.literal("ALL")]).optional().catch(undefined),
   condition: z.enum(UnitCondition).optional().catch(undefined),
@@ -73,6 +75,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/inventory">
   const summary = await getStockSummary(ctx);
   const showCost = canSeeCost(ctx);
   const canEditProducts = can(ctx, "price.edit");
+  const canAdjust = can(ctx, "stock.adjust");
   const keep = (extra: Record<string, string | undefined>) => ({ tab: params.tab === "units" ? undefined : params.tab, ...extra });
 
   const summaryItems: SummaryItem[] = [
@@ -113,6 +116,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/inventory">
     { label: "Devices", href: "/inventory", active: params.tab === "units", count: summary.devicesInStock },
     { label: "Accessories", href: "/inventory?tab=accessories", active: params.tab === "accessories" },
     { label: "Products", href: "/inventory?tab=products", active: params.tab === "products" },
+    ...(canAdjust ? [{ label: "Adjustments", href: "/inventory?tab=adjustments", active: params.tab === "adjustments" }] : []),
   ];
 
   const tabBody =
@@ -120,7 +124,9 @@ async function Content({ searchParams }: { searchParams: PageProps<"/inventory">
       ? await renderUnits(showCost, ctx.role === "OWNER" && ctx.activeBranchId === null)
       : params.tab === "accessories"
         ? await renderAccessories()
-        : await renderProducts(showCost, canEditProducts);
+        : params.tab === "adjustments" && canAdjust
+          ? await renderAdjustments()
+          : await renderProducts(showCost, canEditProducts);
 
   let unitDetail: UnitDetail | null = null;
   let unitError: string | null = null;
@@ -151,6 +157,13 @@ async function Content({ searchParams }: { searchParams: PageProps<"/inventory">
       <PageBody>
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <FilterChips label="Inventory views" items={tabs} />
+          {params.tab === "adjustments" && canAdjust && (
+            <Button asChild>
+              <Link href="/inventory/count">
+                <ClipboardList aria-hidden data-icon="inline-start" /> Start stock count
+              </Link>
+            </Button>
+          )}
           {params.tab === "products" && canEditProducts && (
             <Button asChild>
               <Link href={`/inventory?tab=products&edit=new`} scroll={false}>
@@ -161,7 +174,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/inventory">
         </div>
         {tabBody}
       </PageBody>
-      <UnitSheet detail={unitDetail} error={unitError} canReleaseTradeIns={canEditProducts} />
+      <UnitSheet detail={unitDetail} error={unitError} canReleaseTradeIns={canEditProducts} canAdjust={canAdjust} />
     </>
   );
 
@@ -214,8 +227,18 @@ async function Content({ searchParams }: { searchParams: PageProps<"/inventory">
     const list = await listAccessoryStock(ctx, { q: p.q, lowOnly: p.low === "1", page: p.page });
     return (
       <>
-        <AccessoriesTable rows={list.rows} branches={list.branches} scopeBranchId={list.scopeBranchId} lowOnly={p.low === "1"} />
+        <AccessoriesTable rows={list.rows} branches={list.branches} scopeBranchId={list.scopeBranchId} lowOnly={p.low === "1"} canAdjust={canAdjust} />
         <Pagination page={list.page} pageSize={list.pageSize} total={list.total} noun="accessories" params={keep({ q: p.q, low: p.low })} />
+      </>
+    );
+  }
+
+  async function renderAdjustments() {
+    const list = await listAdjustments(ctx, { branchId: ctx.activeBranchId, page: params.page });
+    return (
+      <>
+        <AdjustmentsTable rows={list.rows} />
+        <Pagination page={list.page} pageSize={list.pageSize} total={list.total} noun="adjustments" params={keep({})} />
       </>
     );
   }

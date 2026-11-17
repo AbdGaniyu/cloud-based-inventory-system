@@ -1,4 +1,4 @@
-import { Download, ExternalLink, Printer, ShieldCheck } from "lucide-react";
+import { Ban, Download, ExternalLink, Printer, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -8,6 +8,7 @@ import { invoiceMessages } from "@/app/(app)/invoices/actions";
 import { IdentifierChip } from "@/components/identifier-chip";
 import { ReversePaymentButton, WaiveDebtButton } from "@/components/ledger/owner-actions";
 import { RecordPaymentButton } from "@/components/ledger/record-payment-sheet";
+import { VoidInvoiceButton } from "@/components/invoices/void-invoice-button";
 import { ReturnItemsButton } from "@/components/returns/return-sheet";
 import { MessageTimeline } from "@/components/notifications/message-timeline";
 import { Money } from "@/components/money";
@@ -26,6 +27,7 @@ import { requirePageAccess } from "@/server/auth/session";
 import { NotFoundError } from "@/server/errors";
 import { getInvoiceDocument } from "@/server/services/document.service";
 import { listInvoiceReturns } from "@/server/services/return.service";
+import { canVoid } from "@/server/services/void.service";
 import { listInvoiceMessages } from "@/server/services/message.service";
 
 export const metadata: Metadata = { title: "Invoice" };
@@ -73,6 +75,7 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
   const canCollect = owing && can(ctx, "payment.record");
   const canReverse = can(ctx, "payment.reverse") && invoice.status !== "VOID";
   const canReturn = can(ctx, "return.create") && invoice.status !== "VOID" && invoice.status !== "RETURNED";
+  const showVoid = canVoid(ctx, { branchId: invoice.branch.id, createdAt: new Date(invoice.createdAt), status: invoice.status });
 
   return (
     <>
@@ -83,6 +86,7 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
             <InvoiceStatusBadge status={invoice.displayStatus} />
             {canCollect && <RecordPaymentButton invoiceId={invoice.id} variant="secondary" />}
             {canReturn && <ReturnItemsButton invoiceId={invoice.id} />}
+            {showVoid && <VoidInvoiceButton invoiceId={invoice.id} number={invoice.number} />}
             <Button asChild variant="secondary">
               <Link href={`/print/receipt/${invoice.id}`} target="_blank" rel="noopener">
                 <Printer aria-hidden data-icon="inline-start" /> Print receipt
@@ -100,11 +104,22 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
           { label: "Branch", value: <span className="text-h2">{invoice.branch.name}</span>, sub: `Served by ${invoice.cashierName}` },
           { label: "Date", value: <span className="text-h2">{dateTime.format(new Date(invoice.createdAt))}</span>, sub: invoice.paymentType === "INSTALLMENT" ? "Installment sale" : "Paid in full at sale" },
           { label: "Total", value: <Money value={invoice.total} /> },
-          { label: "Balance", value: <Money value={invoice.balance} tone={overdue ? "danger" : undefined} />, tone: overdue ? "danger" : undefined, sub: invoice.plan?.nextDueDate ? `Next due ${cal(invoice.plan.nextDueDate)}` : undefined },
+          invoice.voided
+            ? { label: "Balance", value: <span className="text-h2 text-danger">Void</span>, sub: "Nothing owed" }
+            : { label: "Balance", value: <Money value={invoice.balance} tone={overdue ? "danger" : undefined} />, tone: overdue ? "danger" : undefined, sub: invoice.plan?.nextDueDate ? `Next due ${cal(invoice.plan.nextDueDate)}` : undefined },
         ]}
       />
       <PageBody className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex min-w-0 flex-col gap-6">
+          {invoice.voided && (
+            <div role="status" className="flex items-start gap-3 rounded-xl border border-danger-border bg-danger-bg p-4 text-body">
+              <Ban aria-hidden className="mt-0.5 size-5 shrink-0 text-danger" />
+              <p>
+                <strong>Voided</strong> {dateTime.format(new Date(invoice.voided.at))} by {invoice.voided.byName}: {invoice.voided.reason}. Stock went back on the
+                shelf and the payments below were reversed; this invoice no longer counts in sales or balances.
+              </p>
+            </div>
+          )}
           <section aria-labelledby="items-heading">
             <SectionHeader id="items-heading" title="Items" />
             <div className="overflow-x-auto rounded-xl border border-border">
@@ -180,7 +195,7 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
                   </thead>
                   <tbody>
                     {invoice.plan.schedule.map((row) => {
-                      const dueSoon = row.status !== "PAID" && row.dueDate >= today && row.dueDate <= addDays(today, DUE_SOON_DAYS);
+                      const dueSoon = row.status !== "PAID" && row.status !== "CANCELLED" && row.dueDate >= today && row.dueDate <= addDays(today, DUE_SOON_DAYS);
                       return (
                         <tr key={row.sequence} className={cn("h-11 border-b border-border last:border-b-0", row.status === "OVERDUE" && "shadow-[inset_2px_0_0_var(--danger)]")}>
                           <td className="px-3 tabular-nums">{row.sequence}</td>
@@ -345,7 +360,8 @@ async function Content({ params }: { params: PageProps<"/invoices/[id]">["params
                     <li key={item.id} className="text-body">
                       <p className="font-medium">{item.description}</p>
                       <p className="text-small text-muted-foreground">
-                        Until {cal(item.warranty.expiresAt)} · <span className="font-mono">{item.warranty.publicId}</span>
+                        {item.warranty.status === "VOID" ? <Badge tone="neutral">Void</Badge> : <>Until {cal(item.warranty.expiresAt)}</>} ·{" "}
+                        <span className="font-mono">{item.warranty.publicId}</span>
                       </p>
                       <div className="mt-1.5 flex gap-2">
                         <Button asChild size="sm" variant="secondary">

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { DataTable, columnHelper } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { IdentifierChip } from "@/components/identifier-chip";
+import { AdjustAccessoryButton } from "@/components/inventory/adjust-stock";
 import { Money } from "@/components/money";
 import { SearchInput } from "@/components/search-input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -65,11 +66,14 @@ export function AccessoriesTable({
   branches,
   scopeBranchId,
   lowOnly,
+  canAdjust = false,
 }: {
   rows: AccessoryRow[];
   branches: BranchColumn[];
   scopeBranchId: string | null;
   lowOnly: boolean;
+  /** Owner: an Adjust button per row (stock.adjust). */
+  canAdjust?: boolean;
 }) {
   const { hrefWith } = useUrlParams();
   const scopeBranch = branches.find((b) => b.id === scopeBranchId);
@@ -128,6 +132,24 @@ export function AccessoriesTable({
       meta: { label: "Selling price", align: "right" },
       cell: ({ getValue }) => <Money value={getValue()} />,
     }),
+    ...(canAdjust
+      ? [
+          col.display({
+            id: "adjust",
+            header: () => <span className="sr-only">Adjust</span>,
+            meta: { label: "Adjust", align: "right" },
+            enableHiding: false,
+            cell: ({ row }) => (
+              <AdjustAccessoryButton
+                name={row.original.name}
+                productId={row.original.productId}
+                defaultBranchId={scopeBranchId}
+                branches={branches.map((b) => ({ id: b.id, name: b.name, quantity: row.original.stock[b.id]?.quantity ?? 0 }))}
+              />
+            ),
+          }),
+        ]
+      : []),
   ]);
 
   return (

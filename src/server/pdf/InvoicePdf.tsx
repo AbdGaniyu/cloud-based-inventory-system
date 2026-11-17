@@ -30,6 +30,7 @@ const s = StyleSheet.create({
   subtle: { color: "#71717A" },
   mono: { fontFamily: PDF_MONO },
   rule: { borderBottomWidth: 1, borderBottomColor: "#18181B", marginVertical: 10 },
+  voidBanner: { borderWidth: 1.5, borderColor: "#B91C1C", color: "#B91C1C", padding: 8, marginBottom: 10 },
   label: { fontSize: 7, color: "#52525B", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 },
   blocks: { flexDirection: "row", gap: 16, marginBottom: 12 },
   block: { flex: 1, borderWidth: 0.75, borderColor: "#D4D4D8", borderRadius: 3, padding: 8 },
@@ -79,6 +80,14 @@ function InvoiceDocumentPdf({ invoice }: { invoice: InvoiceDocument }) {
           </View>
         </View>
         <View style={s.rule} />
+        {invoice.voided && (
+          <View style={s.voidBanner}>
+            <Text style={{ fontSize: 13, fontWeight: 700, letterSpacing: 1 }}>VOID — NOT A VALID INVOICE</Text>
+            <Text>
+              Voided {formatInstantDate(invoice.voided.at)} by {invoice.voided.byName}: {invoice.voided.reason}
+            </Text>
+          </View>
+        )}
 
         <View style={s.blocks}>
           <View style={s.block}>

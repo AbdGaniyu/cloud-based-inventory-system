@@ -115,6 +115,15 @@ A change is done when `pnpm lint && pnpm typecheck && pnpm test` pass.
   DELETE at the database level. Invoices are voided or returned, payments reversed, never deleted.
 - Balances are always rebuilt from ledger rows (payments, waivers, returns) inside the transaction that
   changes them; Postgres CHECK constraints make the cached totals reconcile.
+- **Voiding** (invoice page → Void; owners any time, branch managers their own branch on the day of
+  sale) keeps the invoice and its number, puts the stock back, reverses every payment with an offsetting
+  row (the dialog says how much to hand back, by method), cancels the plan, voids warranties and drops
+  pending messages. Sales with a return, a trade-in or a swap go through Return items instead.
+- **Stock adjustments** (owner): damage, loss, theft, finds and repairs from the accessory row or the
+  device sheet, and **stock counts** (Inventory → Adjustments → Start stock count) that turn every
+  difference into an adjustment. Each one records the reason, who, before/after and the value at cost;
+  `stock_adjustments` is append-only like the audit log. A count is refused if stock moved while it was
+  being counted, so a sale during the count is never counted twice.
 - Document numbers (`INV-IKJ-000123`, `TRF-…`, `PO-…`, `RTN-…`) are gapless per branch.
 - Branch scope and cost visibility are enforced in services; a cashier's browser never receives cost data.
 - Dates are stored in UTC; due dates are calendar dates in Africa/Lagos, where every job runs.

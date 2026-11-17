@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftRight, Loader2, PackageCheck, Repeat, RotateCcw, ShoppingBag, XCircle } from "lucide-react";
+import { ArrowLeftRight, Ban, ClipboardPen, Loader2, PackageCheck, Repeat, RotateCcw, ShoppingBag, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -14,6 +14,7 @@ import { STORE } from "@/config/store";
 import { UnitCondition } from "@/generated/prisma/enums";
 
 import { IdentifierChip } from "@/components/identifier-chip";
+import { AdjustUnitSection } from "@/components/inventory/adjust-stock";
 import { Money } from "@/components/money";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { CONDITION_LABELS, ConditionBadge, UnitStatusBadge } from "@/components/ui/status-badge";
@@ -28,6 +29,8 @@ const EVENT_ICONS: Record<UnitEvent["kind"], typeof PackageCheck> = {
   transfer_cancelled: XCircle,
   sold: ShoppingBag,
   returned: RotateCcw,
+  sale_voided: Ban,
+  adjusted: ClipboardPen,
 };
 
 const dateFormat = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Africa/Lagos" });
@@ -109,7 +112,17 @@ function ReleaseTradeIn({ unit }: { unit: UnitDetail["unit"] }) {
 }
 
 /** Right-side detail sheet for one device (DESIGN.md §4 "Detail sheet", §5.7 history timeline). */
-export function UnitSheet({ detail, error, canReleaseTradeIns = false }: { detail: UnitDetail | null; error: string | null; canReleaseTradeIns?: boolean }) {
+export function UnitSheet({
+  detail,
+  error,
+  canReleaseTradeIns = false,
+  canAdjust = false,
+}: {
+  detail: UnitDetail | null;
+  error: string | null;
+  canReleaseTradeIns?: boolean;
+  canAdjust?: boolean;
+}) {
   const { setParams } = useUrlParams();
   const open = Boolean(detail || error);
   const close = () => setParams({ unit: null }, { keepPage: true });
@@ -159,6 +172,7 @@ export function UnitSheet({ detail, error, canReleaseTradeIns = false }: { detai
               </dl>
               {detail.unit.notes && <p className="mt-4 rounded-lg bg-surface p-3 text-small text-muted-foreground">{detail.unit.notes}</p>}
               {detail.unit.status === "TRADED_IN" && canReleaseTradeIns && <ReleaseTradeIn key={detail.unit.id} unit={detail.unit} />}
+              {canAdjust && <AdjustUnitSection key={`${detail.unit.id}:${detail.unit.status}`} unitId={detail.unit.id} status={detail.unit.status} />}
 
               <h3 className="mt-8 mb-3 text-h3">History</h3>
               {detail.events.length === 0 ? (

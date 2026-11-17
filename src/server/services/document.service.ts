@@ -24,6 +24,8 @@ import { getSetting } from "@/server/services/settings.service";
  */
 
 export type DisplayInvoiceStatus = InvoiceStatus | "OVERDUE";
+/** Instalment status to display: CANCELLED for unpaid rows of a void invoice. */
+export type DisplayScheduleStatus = ScheduleStatus | "CANCELLED";
 
 export type InvoiceDocument = {
   id: string;
@@ -36,6 +38,8 @@ export type InvoiceDocument = {
   branch: { id: string; name: string; code: string; address: string; phone: string; email: string | null };
   customer: { id: string; name: string; phoneE164: string; email: string | null };
   cashierName: string;
+  /** Set when the invoice was voided: it is kept for the record and shown as void everywhere. */
+  voided: { at: string; byName: string; reason: string } | null;
   items: {
     id: string;
     description: string;
@@ -78,7 +82,7 @@ export type InvoiceDocument = {
     frequency: InstallmentFrequency;
     numberOfInstallments: number;
     nextDueDate: CalendarDate | null;
-    schedule: { sequence: number; dueDate: CalendarDate; amountDue: string; amountPaid: string; amountWaived: string; status: ScheduleStatus }[];
+    schedule: { sequence: number; dueDate: CalendarDate; amountDue: string; amountPaid: string; amountWaived: string; status: DisplayScheduleStatus }[];
   } | null;
   tradeIn: { description: string; creditAmount: string } | null;
   voidReason: string | null;
@@ -97,6 +101,7 @@ export async function loadInvoiceDocument(id: string, today: CalendarDate = toda
         branch: { select: { id: true, name: true, code: true, address: true, phone: true, email: true } },
         customer: { select: { id: true, name: true, phoneE164: true, email: true } },
         cashier: { select: { name: true } },
+        voidedBy: { select: { name: true } },
         items: {
           include: {
             serializedUnit: { select: { imei: true, serialNumber: true } },
@@ -117,8 +122,13 @@ export async function loadInvoiceDocument(id: string, today: CalendarDate = toda
     invoice.installmentPlan?.schedule.map((row) => {
       const dueDate = fromDbDate(row.dueDate);
       const unpaid = row.amountPaid.lt(row.amountDue);
-      // The nightly job marks rows OVERDUE; documents shouldn't wait for it.
-      const status: ScheduleStatus = unpaid && dueDate < today && (row.status === "PENDING" || row.status === "PARTIAL") ? "OVERDUE" : row.status;
+      // The nightly job marks rows OVERDUE; documents shouldn't wait for it. A void invoice's unpaid rows are cancelled.
+      const status: DisplayScheduleStatus =
+        invoice.status === "VOID" && row.status !== "PAID"
+          ? "CANCELLED"
+          : unpaid && dueDate < today && (row.status === "PENDING" || row.status === "PARTIAL")
+            ? "OVERDUE"
+            : row.status;
       return { sequence: row.sequence, dueDate, amountDue: row.amountDue.toFixed(2), amountPaid: row.amountPaid.toFixed(2), amountWaived: row.amountWaived.toFixed(2), status };
     }) ?? [];
   const overdue = invoice.status !== "VOID" && invoice.status !== "PAID" && schedule.some((r) => r.status === "OVERDUE");
@@ -133,6 +143,10 @@ export async function loadInvoiceDocument(id: string, today: CalendarDate = toda
     branch: invoice.branch,
     customer: invoice.customer,
     cashierName: invoice.cashier.name,
+    voided:
+      invoice.status === "VOID" && invoice.voidedAt
+        ? { at: invoice.voidedAt.toISOString(), byName: invoice.voidedBy?.name ?? "Unknown", reason: invoice.voidReason ?? "" }
+        : null,
     items: invoice.items.map((item) => ({
       id: item.id,
       description: item.description,
@@ -156,7 +170,8 @@ export async function loadInvoiceDocument(id: string, today: CalendarDate = toda
     returnedAmount: invoice.returnedAmount.toFixed(2),
     adjustedAmount: invoice.adjustedAmount.toFixed(2),
     amountPaid: invoice.amountPaid.toFixed(2),
-    balance: invoice.balance.toFixed(2),
+    // The ledger keeps total − paid on a void invoice (a CHECK constraint); nobody owes it, so documents show zero.
+    balance: invoice.status === "VOID" ? "0.00" : invoice.balance.toFixed(2),
     payments: invoice.payments.map((p) => ({
       id: p.id,
       paidAt: p.paidAt.toISOString(),
@@ -175,7 +190,7 @@ export async function loadInvoiceDocument(id: string, today: CalendarDate = toda
           financedAmount: invoice.installmentPlan.financedAmount.toFixed(2),
           frequency: invoice.installmentPlan.frequency,
           numberOfInstallments: invoice.installmentPlan.numberOfInstallments,
-          nextDueDate: schedule.find((r) => r.status !== "PAID" && r.status !== "WAIVED")?.dueDate ?? null,
+          nextDueDate: schedule.find((r) => r.status !== "PAID" && r.status !== "WAIVED" && r.status !== "CANCELLED")?.dueDate ?? null,
           schedule,
         }
       : null,

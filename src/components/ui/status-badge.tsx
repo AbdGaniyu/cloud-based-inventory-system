@@ -42,6 +42,7 @@ const UNIT_STATUS: Record<UnitStatus, { label: string; tone: Tone }> = {
   RETURNED: { label: "Returned", tone: "warning" },
   TRADED_IN: { label: "Traded In", tone: "warning" },
   DEFECTIVE: { label: "Defective", tone: "danger" },
+  WRITTEN_OFF: { label: "Written Off", tone: "neutral" },
 };
 
 export function UnitStatusBadge({ status }: { status: UnitStatus }) {
@@ -105,8 +106,9 @@ export function InvoiceStatusBadge({ status }: { status: InvoiceStatus | "OVERDU
 }
 
 /** Installment row status; "Due soon" when unpaid and due within 3 days (DESIGN.md §2.4). */
-export function ScheduleStatusBadge({ status, dueSoon }: { status: ScheduleStatus; dueSoon?: boolean }) {
+export function ScheduleStatusBadge({ status, dueSoon }: { status: ScheduleStatus | "CANCELLED"; dueSoon?: boolean }) {
   if (status === "PAID") return <Badge tone="success">Paid</Badge>;
+  if (status === "CANCELLED") return <Badge tone="neutral" className="italic">Cancelled</Badge>;
   if (status === "OVERDUE") return <Badge tone="danger">Overdue</Badge>;
   if (status === "WAIVED") return <Badge tone="neutral" className="italic">Waived</Badge>;
   if (dueSoon) return <Badge tone="warning">Due soon</Badge>;

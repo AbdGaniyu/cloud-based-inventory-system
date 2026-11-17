@@ -67,6 +67,9 @@ async function Receipt({ params, searchParams }: { params: PageProps<"/print/rec
           <p>{formatPhoneDisplay(invoice.branch.phone)}</p>
         </header>
         <Divider />
+        {invoice.voided && (
+          <p className="my-1 border-2 border-black py-1 text-center text-[14px] font-bold tracking-widest">VOID · {invoice.voided.reason}</p>
+        )}
         <Row label="Receipt" value={invoice.number} />
         <Row label="Date" value={dateTime.format(new Date(invoice.createdAt))} />
         <Row label="Customer" value={invoice.customer.name} />

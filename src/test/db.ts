@@ -9,6 +9,8 @@ const APP_TABLES = [
   "audit_logs",
   "notification_logs",
   "recovery_codes",
+  "stock_adjustments",
+  "stock_counts",
   "job_runs",
   "error_events",
   "ops_alerts",
