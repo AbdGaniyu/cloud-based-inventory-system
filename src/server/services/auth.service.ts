@@ -18,8 +18,8 @@ export type AuthenticatedUser = {
 // Compared against when the email is unknown, so a miss costs the same time as a wrong password.
 const DUMMY_HASH = "$2b$12$AgLMM3SvlT3/jdoYhVLyH.BwjV8s6tV0w1EE5Y2wls8ZjdUk5xDMG";
 
-/** Checks email + password. Returns null on any failure without saying which part was wrong. */
-export async function verifyCredentials(input: LoginInput, ip?: string | null): Promise<AuthenticatedUser | null> {
+/** Email + password check with no side effects (also used for manager approval at the POS). */
+export async function checkCredentials(input: LoginInput): Promise<AuthenticatedUser | null> {
   const user = await db.user.findUnique({
     where: { email: input.email },
     select: {
@@ -38,6 +38,13 @@ export async function verifyCredentials(input: LoginInput, ip?: string | null): 
   if (!user || !passwordOk || !user.isActive) return null;
   // Staff of a deactivated branch cannot sign in; owners have no branch.
   if (user.branch && !user.branch.isActive) return null;
+  return user;
+}
+
+/** Sign-in: checks credentials, then records the login. Returns null without saying which part was wrong. */
+export async function verifyCredentials(input: LoginInput, ip?: string | null): Promise<AuthenticatedUser | null> {
+  const user = await checkCredentials(input);
+  if (!user) return null;
 
   await db.$transaction(async (tx) => {
     await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });

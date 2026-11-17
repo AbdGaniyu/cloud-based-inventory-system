@@ -3,7 +3,8 @@ import { cn } from "@/lib/utils";
 
 /** Money with tabular numerals; negatives get a minus and Danger colour (DESIGN.md §2.6). */
 export function Money({ value, className, tone }: { value: MoneyInput; className?: string; tone?: "danger" }) {
-  const negative = money(value).isNegative();
+  // lt(0) rather than isNegative(): decimal.js reports -0 as negative.
+  const negative = money(value).lt(0);
   return (
     <span className={cn("tabular-nums whitespace-nowrap", (negative || tone === "danger") && "text-danger", className)}>
       {formatMoney(value)}
