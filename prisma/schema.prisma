@@ -1,0 +1,1066 @@
+// Gadget Hub — multi-branch inventory, POS, credit ledger and messaging.
+//
+// Conventions
+// - Tables and columns are snake_case in Postgres (@@map / @map); Prisma models stay PascalCase/camelCase.
+// - IDs are UUIDv7 (time-ordered) stored as native uuid.
+// - Every money column is Decimal(14,2). Never use JS floats for money (see src/lib/money.ts).
+// - Timestamps are timestamptz (UTC). Due dates are calendar dates (date) interpreted in Africa/Lagos.
+// - Cached balances (Invoice.amountPaid/balance, PurchaseOrder.amountPaid, InstallmentSchedule.amountPaid)
+//   are recomputed from ledger rows inside the transaction that writes those rows.
+// - Financial records are never hard-deleted: invoices are voided, payments are reversed with an
+//   offsetting row (reversalOfId). Master data is deactivated with isActive.
+// - Extra DB-level guarantees (CHECK constraints, audit_logs immutability trigger) live in the
+//   init migration SQL because Prisma schema language cannot express them.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum BranchType {
+  STORE
+  WAREHOUSE
+
+  @@map("branch_type")
+}
+
+enum Role {
+  OWNER
+  BRANCH_MANAGER
+  CASHIER
+
+  @@map("role")
+}
+
+enum TrackingType {
+  SERIALIZED
+  NON_SERIALIZED
+
+  @@map("tracking_type")
+}
+
+enum UnitCondition {
+  BRAND_NEW
+  OPEN_BOX
+  UK_USED
+  US_USED
+  REFURBISHED
+
+  @@map("unit_condition")
+}
+
+enum UnitStatus {
+  IN_STOCK
+  IN_TRANSIT
+  SOLD
+  RETURNED
+  DEFECTIVE
+  TRADED_IN
+
+  @@map("unit_status")
+}
+
+enum TransferStatus {
+  DRAFT
+  IN_TRANSIT
+  RECEIVED
+  CANCELLED
+
+  @@map("transfer_status")
+}
+
+enum PaymentTerms {
+  PAID_IN_FULL
+  PARTIAL_DEPOSIT
+  NET_7
+  NET_15
+  NET_30
+
+  @@map("payment_terms")
+}
+
+/// Settlement state of a purchase order (payables side).
+enum PurchaseOrderStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+
+  @@map("purchase_order_status")
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  POS_CARD
+
+  @@map("payment_method")
+}
+
+enum CustomerPaymentKind {
+  CHECKOUT
+  DOWN_PAYMENT
+  INSTALLMENT
+  REFUND
+
+  @@map("customer_payment_kind")
+}
+
+enum InvoicePaymentType {
+  FULL
+  INSTALLMENT
+
+  @@map("invoice_payment_type")
+}
+
+enum InvoiceStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  VOID
+  RETURNED
+
+  @@map("invoice_status")
+}
+
+enum InstallmentFrequency {
+  WEEKLY
+  BI_WEEKLY
+  MONTHLY
+
+  @@map("installment_frequency")
+}
+
+enum InstallmentPlanStatus {
+  ACTIVE
+  COMPLETED
+  DEFAULTED
+  CANCELLED
+
+  @@map("installment_plan_status")
+}
+
+enum ScheduleStatus {
+  PENDING
+  PARTIAL
+  PAID
+  OVERDUE
+  WAIVED
+
+  @@map("schedule_status")
+}
+
+/// Where a returned item goes. RESTOCK -> unit back to IN_STOCK; DEFECTIVE -> unit DEFECTIVE (not sellable).
+enum ReturnDisposition {
+  RESTOCK
+  DEFECTIVE
+
+  @@map("return_disposition")
+}
+
+enum WarrantyStatus {
+  ACTIVE
+  EXPIRED
+  VOID
+
+  @@map("warranty_status")
+}
+
+enum MessageChannel {
+  WHATSAPP
+  SMS
+
+  @@map("message_channel")
+}
+
+/// SKIPPED records a message that was not sent because the customer opted out of every channel (invariant 12).
+enum NotificationStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+  SKIPPED
+
+  @@map("notification_status")
+}
+
+enum InvoiceAdjustmentKind {
+  WAIVER
+  ADJUSTMENT
+
+  @@map("invoice_adjustment_kind")
+}
+
+enum StockAlertType {
+  LOW_STOCK
+  AGING
+
+  @@map("stock_alert_type")
+}
+
+// ─── Organisation & access ───────────────────────────────────────────────────
+
+model Branch {
+  id       String     @id @default(uuid(7)) @db.Uuid
+  name     String
+  /// Short unique code; used as the document-number prefix, e.g. INV-IKJ-000123.
+  code     String     @unique
+  type     BranchType
+  address  String
+  phone    String
+  email    String?
+  isActive Boolean    @default(true) @map("is_active")
+
+  /// Last issued invoice number for this branch. Incremented under a row lock inside the checkout
+  /// transaction so invoice numbers are gapless per branch (invariant 10).
+  invoiceSequence       Int @default(0) @map("invoice_sequence")
+  transferSequence      Int @default(0) @map("transfer_sequence")
+  purchaseOrderSequence Int @default(0) @map("purchase_order_sequence")
+  returnSequence        Int @default(0) @map("return_sequence")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  users            User[]
+  inventory        BranchInventory[]
+  serializedUnits  SerializedUnit[]
+  transfersOut     StockTransfer[]   @relation("TransferFrom")
+  transfersIn      StockTransfer[]   @relation("TransferTo")
+  purchaseOrders   PurchaseOrder[]
+  invoices         Invoice[]
+  customerPayments CustomerPayment[]
+  tradeIns         TradeIn[]
+  returns          Return[]
+  warrantyCards    WarrantyCard[]
+  auditLogs        AuditLog[]
+  stockAlerts      StockAlert[]
+
+  @@map("branches")
+}
+
+model User {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  name         String
+  /// Stored lowercased.
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  role         Role
+  /// Null for OWNER (all branches); required for BRANCH_MANAGER and CASHIER (CHECK in migration).
+  branchId     String?   @map("branch_id") @db.Uuid
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  branch Branch? @relation(fields: [branchId], references: [id])
+
+  transfersCreated   StockTransfer[]     @relation("TransferCreatedBy")
+  transfersApproved  StockTransfer[]     @relation("TransferApprovedBy")
+  transfersShipped   StockTransfer[]     @relation("TransferShippedBy")
+  transfersReceived  StockTransfer[]     @relation("TransferReceivedBy")
+  transfersCancelled StockTransfer[]     @relation("TransferCancelledBy")
+  purchaseOrders     PurchaseOrder[]     @relation("PurchaseOrderReceivedBy")
+  supplierPayments   SupplierPayment[]   @relation("SupplierPaymentPaidBy")
+  customersCreated   Customer[]          @relation("CustomerCreatedBy")
+  invoicesCashiered  Invoice[]           @relation("InvoiceCashier")
+  invoicesVoided     Invoice[]           @relation("InvoiceVoidedBy")
+  plansApproved      InstallmentPlan[]   @relation("PlanApprovedBy")
+  paymentsReceived   CustomerPayment[]   @relation("CustomerPaymentReceivedBy")
+  adjustmentsMade    InvoiceAdjustment[] @relation("AdjustmentCreatedBy")
+  tradeInsAssessed   TradeIn[]           @relation("TradeInAssessedBy")
+  returnsProcessed   Return[]            @relation("ReturnProcessedBy")
+  templatesUpdated   MessageTemplate[]   @relation("TemplateUpdatedBy")
+  notifications      NotificationLog[]   @relation("NotificationTriggeredBy")
+  settingsUpdated    Setting[]           @relation("SettingUpdatedBy")
+  auditLogs          AuditLog[]
+
+  @@index([branchId])
+  @@map("users")
+}
+
+// ─── Catalogue & stock ───────────────────────────────────────────────────────
+
+model Product {
+  id                  String       @id @default(uuid(7)) @db.Uuid
+  name                String
+  brand               String
+  /// Free text (Phones, Laptops, Consoles, Smartwatches, Accessories, ...) so new categories need no migration.
+  category            String
+  trackingType        TrackingType @map("tracking_type")
+  sku                 String       @unique
+  barcode             String?      @unique
+  defaultCostPrice    Decimal      @map("default_cost_price") @db.Decimal(14, 2)
+  defaultSellingPrice Decimal      @map("default_selling_price") @db.Decimal(14, 2)
+  warrantyMonths      Int          @default(0) @map("warranty_months")
+  /// Default low-stock threshold for NON_SERIALIZED products; BranchInventory.reorderLevel overrides per branch.
+  reorderLevel        Int          @default(0) @map("reorder_level")
+  isActive            Boolean      @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  inventory          BranchInventory[]
+  serializedUnits    SerializedUnit[]
+  transferItems      StockTransferItem[]
+  purchaseOrderItems PurchaseOrderItem[]
+  invoiceItems       InvoiceItem[]
+  tradeIns           TradeIn[]
+  stockAlerts        StockAlert[]
+
+  @@index([category])
+  @@index([brand])
+  @@map("products")
+}
+
+/// Quantity ledger for NON_SERIALIZED products, one row per (product, branch).
+/// Serialized stock is counted from SerializedUnit rows instead.
+///
+/// - quantity: on hand and available to sell at this branch.
+/// - reservedQuantity: shipped out of this branch on transfers that are still IN_TRANSIT.
+///   Ship: quantity -= n, reservedQuantity += n. Receive: reservedQuantity -= n at source,
+///   quantity += received at destination. Cancel in transit: reservedQuantity -= n, quantity += n.
+model BranchInventory {
+  id               String @id @default(uuid(7)) @db.Uuid
+  productId        String @map("product_id") @db.Uuid
+  branchId         String @map("branch_id") @db.Uuid
+  quantity         Int    @default(0)
+  reservedQuantity Int    @default(0) @map("reserved_quantity")
+  /// Per-branch override of Product.reorderLevel.
+  reorderLevel     Int?   @map("reorder_level")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  product Product @relation(fields: [productId], references: [id])
+  branch  Branch  @relation(fields: [branchId], references: [id])
+
+  @@unique([productId, branchId])
+  @@index([branchId])
+  @@map("branch_inventory")
+}
+
+/// One physical device. Lives in exactly one branch with exactly one status (invariant 3).
+/// While IN_TRANSIT, branchId stays the source branch until the transfer is received.
+model SerializedUnit {
+  id                  String        @id @default(uuid(7)) @db.Uuid
+  productId           String        @map("product_id") @db.Uuid
+  /// At least one of imei / serialNumber is required (CHECK in migration).
+  imei                String?       @unique
+  serialNumber        String?       @unique @map("serial_number")
+  branchId            String        @map("branch_id") @db.Uuid
+  condition           UnitCondition
+  color               String?
+  storage             String?
+  ram                 String?
+  /// 0–100 (CHECK in migration).
+  batteryHealth       Int?          @map("battery_health")
+  costPrice           Decimal       @map("cost_price") @db.Decimal(14, 2)
+  sellingPrice        Decimal       @map("selling_price") @db.Decimal(14, 2)
+  status              UnitStatus    @default(IN_STOCK)
+  purchaseOrderId     String?       @map("purchase_order_id") @db.Uuid
+  purchaseOrderItemId String?       @map("purchase_order_item_id") @db.Uuid
+  /// When the unit entered our stock (intake or trade-in). Drives the 60-day aging alert.
+  receivedAt          DateTime      @map("received_at") @db.Timestamptz(3)
+  soldAt              DateTime?     @map("sold_at") @db.Timestamptz(3)
+  notes               String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  product           Product            @relation(fields: [productId], references: [id])
+  branch            Branch             @relation(fields: [branchId], references: [id])
+  purchaseOrder     PurchaseOrder?     @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrderItem PurchaseOrderItem? @relation(fields: [purchaseOrderItemId], references: [id])
+
+  transferItems StockTransferItem[]
+  invoiceItems  InvoiceItem[]
+  tradeIn       TradeIn?
+  returnItems   ReturnItem[]
+  warrantyCards WarrantyCard[]
+  stockAlerts   StockAlert[]
+
+  @@index([productId])
+  @@index([branchId, status])
+  @@index([purchaseOrderId])
+  @@index([purchaseOrderItemId])
+  @@index([status, receivedAt])
+  @@map("serialized_units")
+}
+
+model StockTransfer {
+  id           String         @id @default(uuid(7)) @db.Uuid
+  /// e.g. TRF-WH-000012 (sequence from the source branch).
+  number       String         @unique
+  fromBranchId String         @map("from_branch_id") @db.Uuid
+  toBranchId   String         @map("to_branch_id") @db.Uuid
+  status       TransferStatus @default(DRAFT)
+
+  createdById   String  @map("created_by_id") @db.Uuid
+  approvedById  String? @map("approved_by_id") @db.Uuid
+  shippedById   String? @map("shipped_by_id") @db.Uuid
+  receivedById  String? @map("received_by_id") @db.Uuid
+  cancelledById String? @map("cancelled_by_id") @db.Uuid
+
+  approvedAt  DateTime? @map("approved_at") @db.Timestamptz(3)
+  shippedAt   DateTime? @map("shipped_at") @db.Timestamptz(3)
+  receivedAt  DateTime? @map("received_at") @db.Timestamptz(3)
+  cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz(3)
+
+  /// Set on receive when any item's receivedQuantity < quantity.
+  hasDiscrepancy Boolean @default(false) @map("has_discrepancy")
+  driverName     String? @map("driver_name")
+  notes          String?
+  cancelReason   String? @map("cancel_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  fromBranch  Branch @relation("TransferFrom", fields: [fromBranchId], references: [id])
+  toBranch    Branch @relation("TransferTo", fields: [toBranchId], references: [id])
+  createdBy   User   @relation("TransferCreatedBy", fields: [createdById], references: [id])
+  approvedBy  User?  @relation("TransferApprovedBy", fields: [approvedById], references: [id])
+  shippedBy   User?  @relation("TransferShippedBy", fields: [shippedById], references: [id])
+  receivedBy  User?  @relation("TransferReceivedBy", fields: [receivedById], references: [id])
+  cancelledBy User?  @relation("TransferCancelledBy", fields: [cancelledById], references: [id])
+
+  items StockTransferItem[]
+
+  @@index([fromBranchId, status])
+  @@index([toBranchId, status])
+  @@index([createdById])
+  @@index([approvedById])
+  @@index([shippedById])
+  @@index([receivedById])
+  @@index([cancelledById])
+  @@map("stock_transfers")
+}
+
+model StockTransferItem {
+  id               String  @id @default(uuid(7)) @db.Uuid
+  transferId       String  @map("transfer_id") @db.Uuid
+  productId        String  @map("product_id") @db.Uuid
+  /// Set for serialized items (picked by exact IMEI/serial); quantity is then 1.
+  serializedUnitId String? @map("serialized_unit_id") @db.Uuid
+  quantity         Int
+  /// Null until received. May be lower than quantity for accessories (discrepancy).
+  receivedQuantity Int?    @map("received_quantity")
+  discrepancyNote  String? @map("discrepancy_note")
+
+  transfer       StockTransfer   @relation(fields: [transferId], references: [id])
+  product        Product         @relation(fields: [productId], references: [id])
+  serializedUnit SerializedUnit? @relation(fields: [serializedUnitId], references: [id])
+
+  @@unique([transferId, serializedUnitId])
+  @@index([transferId])
+  @@index([productId])
+  @@index([serializedUnitId])
+  @@map("stock_transfer_items")
+}
+
+// ─── Suppliers & payables ────────────────────────────────────────────────────
+
+/// Supplier balance is derived: Σ PurchaseOrder.totalCost − Σ SupplierPayment.amount. Never stored.
+model Supplier {
+  id            String  @id @default(uuid(7)) @db.Uuid
+  name          String
+  contactPerson String? @map("contact_person")
+  phone         String?
+  email         String?
+  address       String?
+  notes         String?
+  isActive      Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  purchaseOrders PurchaseOrder[]
+  payments       SupplierPayment[]
+
+  @@index([name])
+  @@map("suppliers")
+}
+
+/// Created by stock intake. One PO = one delivery into one branch.
+model PurchaseOrder {
+  id                String              @id @default(uuid(7)) @db.Uuid
+  /// e.g. PO-WH-000004 (sequence from the receiving branch).
+  number            String              @unique
+  supplierId        String              @map("supplier_id") @db.Uuid
+  branchId          String              @map("branch_id") @db.Uuid
+  paymentTerms      PaymentTerms        @map("payment_terms")
+  /// Supplier's own invoice/delivery note reference.
+  supplierReference String?             @map("supplier_reference")
+  totalCost         Decimal             @map("total_cost") @db.Decimal(14, 2)
+  /// Cached Σ SupplierPayment.amount for this PO, recomputed in the payment transaction.
+  amountPaid        Decimal             @default(0) @map("amount_paid") @db.Decimal(14, 2)
+  /// Computed from terms (receivedAt + 7/15/30 days, Lagos calendar date). Null for PAID_IN_FULL.
+  dueDate           DateTime?           @map("due_date") @db.Date
+  status            PurchaseOrderStatus @default(UNPAID)
+  receivedById      String              @map("received_by_id") @db.Uuid
+  receivedAt        DateTime            @map("received_at") @db.Timestamptz(3)
+  notes             String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
+  branch     Branch   @relation(fields: [branchId], references: [id])
+  receivedBy User     @relation("PurchaseOrderReceivedBy", fields: [receivedById], references: [id])
+
+  items           PurchaseOrderItem[]
+  payments        SupplierPayment[]
+  serializedUnits SerializedUnit[]
+
+  @@index([supplierId])
+  @@index([branchId, receivedAt])
+  @@index([status, dueDate])
+  @@index([receivedById])
+  @@map("purchase_orders")
+}
+
+/// Serialized intake lines are grouped by (product, unit cost) so unitCost is always exact;
+/// the individual units point back here via SerializedUnit.purchaseOrderItemId.
+model PurchaseOrderItem {
+  id               String  @id @default(uuid(7)) @db.Uuid
+  purchaseOrderId  String  @map("purchase_order_id") @db.Uuid
+  productId        String  @map("product_id") @db.Uuid
+  quantity         Int
+  unitCost         Decimal @map("unit_cost") @db.Decimal(14, 2)
+  /// Selling price applied to stock received on this line (accessories) — informational for units.
+  unitSellingPrice Decimal @map("unit_selling_price") @db.Decimal(14, 2)
+  lineTotal        Decimal @map("line_total") @db.Decimal(14, 2)
+
+  purchaseOrder   PurchaseOrder    @relation(fields: [purchaseOrderId], references: [id])
+  product         Product          @relation(fields: [productId], references: [id])
+  serializedUnits SerializedUnit[]
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+  @@map("purchase_order_items")
+}
+
+/// Signed ledger row: positive = payout to supplier; negative = reversal of an earlier payout.
+model SupplierPayment {
+  id              String        @id @default(uuid(7)) @db.Uuid
+  purchaseOrderId String        @map("purchase_order_id") @db.Uuid
+  supplierId      String        @map("supplier_id") @db.Uuid
+  amount          Decimal       @db.Decimal(14, 2)
+  method          PaymentMethod
+  reference       String?
+  notes           String?
+  /// Set on a reversal row; points at the payment it cancels (one reversal per payment).
+  reversalOfId    String?       @unique @map("reversal_of_id") @db.Uuid
+  paidById        String        @map("paid_by_id") @db.Uuid
+  paidAt          DateTime      @map("paid_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  purchaseOrder PurchaseOrder    @relation(fields: [purchaseOrderId], references: [id])
+  supplier      Supplier         @relation(fields: [supplierId], references: [id])
+  paidBy        User             @relation("SupplierPaymentPaidBy", fields: [paidById], references: [id])
+  reversalOf    SupplierPayment? @relation("SupplierPaymentReversal", fields: [reversalOfId], references: [id])
+  reversedBy    SupplierPayment? @relation("SupplierPaymentReversal")
+
+  @@index([purchaseOrderId])
+  @@index([supplierId, paidAt])
+  @@index([paidById])
+  @@map("supplier_payments")
+}
+
+// ─── Customers & sales ───────────────────────────────────────────────────────
+
+/// Global (not branch-scoped).
+model Customer {
+  id            String  @id @default(uuid(7)) @db.Uuid
+  name          String
+  /// Normalised through src/lib/phone.ts.
+  phoneE164     String  @unique @map("phone_e164")
+  email         String?
+  address       String?
+  whatsappOptIn Boolean @default(true) @map("whatsapp_opt_in")
+  smsOptIn      Boolean @default(true) @map("sms_opt_in")
+  notes         String?
+  createdById   String? @map("created_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  createdBy User? @relation("CustomerCreatedBy", fields: [createdById], references: [id])
+
+  invoices      Invoice[]
+  payments      CustomerPayment[]
+  tradeIns      TradeIn[]
+  returns       Return[]
+  warrantyCards WarrantyCard[]
+  notifications NotificationLog[]
+
+  @@index([name])
+  @@index([createdById])
+  @@map("customers")
+}
+
+/// Totals (all cached, recomputed server-side; never accepted from the client):
+///   subtotal       = Σ InvoiceItem.lineTotal
+///   taxAmount      = round2((subtotal − discount) × taxRate / 100)
+///   total          = subtotal − discount + taxAmount − tradeInCredit
+///   returnedAmount = Σ Return.creditAmount
+///   adjustedAmount = Σ InvoiceAdjustment.amount (waivers)
+///   amountPaid     = Σ CustomerPayment.amount (refunds/reversals are negative rows)
+///   balance        = total − returnedAmount − adjustedAmount − amountPaid   (CHECK in migration)
+model Invoice {
+  id             String             @id @default(uuid(7)) @db.Uuid
+  /// e.g. INV-IKJ-000123, gapless per branch.
+  number         String             @unique
+  branchId       String             @map("branch_id") @db.Uuid
+  customerId     String             @map("customer_id") @db.Uuid
+  cashierId      String             @map("cashier_id") @db.Uuid
+  subtotal       Decimal            @db.Decimal(14, 2)
+  /// Invoice-level discount (line discounts are on InvoiceItem).
+  discount       Decimal            @default(0) @db.Decimal(14, 2)
+  /// Percent, e.g. 7.50. Snapshot of the VAT setting at checkout.
+  taxRate        Decimal            @map("tax_rate") @db.Decimal(5, 2)
+  taxAmount      Decimal            @map("tax_amount") @db.Decimal(14, 2)
+  tradeInCredit  Decimal            @default(0) @map("trade_in_credit") @db.Decimal(14, 2)
+  total          Decimal            @db.Decimal(14, 2)
+  returnedAmount Decimal            @default(0) @map("returned_amount") @db.Decimal(14, 2)
+  adjustedAmount Decimal            @default(0) @map("adjusted_amount") @db.Decimal(14, 2)
+  amountPaid     Decimal            @default(0) @map("amount_paid") @db.Decimal(14, 2)
+  balance        Decimal            @db.Decimal(14, 2)
+  paymentType    InvoicePaymentType @map("payment_type")
+  status         InvoiceStatus
+  notes          String?
+
+  voidedById String?   @map("voided_by_id") @db.Uuid
+  voidedAt   DateTime? @map("voided_at") @db.Timestamptz(3)
+  voidReason String?   @map("void_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  branch   Branch   @relation(fields: [branchId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+  cashier  User     @relation("InvoiceCashier", fields: [cashierId], references: [id])
+  voidedBy User?    @relation("InvoiceVoidedBy", fields: [voidedById], references: [id])
+
+  items           InvoiceItem[]
+  installmentPlan InstallmentPlan?
+  payments        CustomerPayment[]
+  adjustments     InvoiceAdjustment[]
+  tradeIns        TradeIn[]
+  returns         Return[]            @relation("ReturnOriginalInvoice")
+  /// Set when this invoice is the replacement side of a swap.
+  swapFromReturn  Return?             @relation("ReturnReplacementInvoice")
+  notifications   NotificationLog[]
+
+  @@index([branchId, createdAt])
+  @@index([customerId])
+  @@index([cashierId])
+  @@index([voidedById])
+  @@index([status])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id               String         @id @default(uuid(7)) @db.Uuid
+  invoiceId        String         @map("invoice_id") @db.Uuid
+  productId        String         @map("product_id") @db.Uuid
+  serializedUnitId String?        @map("serialized_unit_id") @db.Uuid
+  /// Snapshot of product name + variant at time of sale.
+  description      String
+  /// Snapshot of the unit's condition at time of sale (serialized lines only).
+  condition        UnitCondition?
+  quantity         Int
+  unitPrice        Decimal        @map("unit_price") @db.Decimal(14, 2)
+  /// Line-level discount (absolute amount for the whole line).
+  discount         Decimal        @default(0) @db.Decimal(14, 2)
+  /// Cost snapshot for margin reporting. Never sent to cashiers (invariant 9).
+  unitCost         Decimal        @map("unit_cost") @db.Decimal(14, 2)
+  /// quantity × unitPrice − discount
+  lineTotal        Decimal        @map("line_total") @db.Decimal(14, 2)
+  warrantyMonths   Int            @default(0) @map("warranty_months")
+  returnedQuantity Int            @default(0) @map("returned_quantity")
+
+  invoice        Invoice         @relation(fields: [invoiceId], references: [id])
+  product        Product         @relation(fields: [productId], references: [id])
+  serializedUnit SerializedUnit? @relation(fields: [serializedUnitId], references: [id])
+
+  warrantyCard WarrantyCard?
+  returnItems  ReturnItem[]
+
+  @@index([invoiceId])
+  @@index([productId])
+  @@index([serializedUnitId])
+  @@map("invoice_items")
+}
+
+model InstallmentPlan {
+  id                   String                @id @default(uuid(7)) @db.Uuid
+  invoiceId            String                @unique @map("invoice_id") @db.Uuid
+  downPayment          Decimal               @map("down_payment") @db.Decimal(14, 2)
+  /// invoice.total − downPayment
+  financedAmount       Decimal               @map("financed_amount") @db.Decimal(14, 2)
+  numberOfInstallments Int                   @map("number_of_installments")
+  frequency            InstallmentFrequency
+  startDate            DateTime              @map("start_date") @db.Date
+  /// Earliest unpaid schedule row's due date; null once COMPLETED.
+  nextDueDate          DateTime?             @map("next_due_date") @db.Date
+  guarantorName        String?               @map("guarantor_name")
+  guarantorPhone       String?               @map("guarantor_phone")
+  idVerificationNotes  String?               @map("id_verification_notes")
+  /// True when the plan exceeded the approval threshold or fell under the minimum down-payment percentage.
+  requiresApproval     Boolean               @default(false) @map("requires_approval")
+  approvedById         String?               @map("approved_by_id") @db.Uuid
+  approvedAt           DateTime?             @map("approved_at") @db.Timestamptz(3)
+  status               InstallmentPlanStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  invoice    Invoice @relation(fields: [invoiceId], references: [id])
+  approvedBy User?   @relation("PlanApprovedBy", fields: [approvedById], references: [id])
+
+  schedule InstallmentSchedule[]
+
+  @@index([approvedById])
+  @@index([status, nextDueDate])
+  @@map("installment_plans")
+}
+
+model InstallmentSchedule {
+  id         String         @id @default(uuid(7)) @db.Uuid
+  planId     String         @map("plan_id") @db.Uuid
+  sequence   Int
+  dueDate    DateTime       @map("due_date") @db.Date
+  amountDue  Decimal        @map("amount_due") @db.Decimal(14, 2)
+  /// Cached allocation of installment payments (oldest row first), recomputed with each payment.
+  amountPaid Decimal        @default(0) @map("amount_paid") @db.Decimal(14, 2)
+  status     ScheduleStatus @default(PENDING)
+  paidAt     DateTime?      @map("paid_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  plan InstallmentPlan @relation(fields: [planId], references: [id])
+
+  @@unique([planId, sequence])
+  @@index([dueDate, status])
+  @@map("installment_schedules")
+}
+
+/// Signed ledger row. Positive = money received. Negative = REFUND, or a reversal (reversalOfId set)
+/// of an earlier row. Split payments at checkout are multiple rows. (CHECK in migration.)
+model CustomerPayment {
+  id           String              @id @default(uuid(7)) @db.Uuid
+  invoiceId    String              @map("invoice_id") @db.Uuid
+  customerId   String              @map("customer_id") @db.Uuid
+  /// Branch that collected the money; may differ from the selling branch.
+  branchId     String              @map("branch_id") @db.Uuid
+  amount       Decimal             @db.Decimal(14, 2)
+  method       PaymentMethod
+  reference    String?
+  kind         CustomerPaymentKind
+  reversalOfId String?             @unique @map("reversal_of_id") @db.Uuid
+  notes        String?
+  receivedById String              @map("received_by_id") @db.Uuid
+  paidAt       DateTime            @map("paid_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  invoice    Invoice          @relation(fields: [invoiceId], references: [id])
+  customer   Customer         @relation(fields: [customerId], references: [id])
+  branch     Branch           @relation(fields: [branchId], references: [id])
+  receivedBy User             @relation("CustomerPaymentReceivedBy", fields: [receivedById], references: [id])
+  reversalOf CustomerPayment? @relation("CustomerPaymentReversal", fields: [reversalOfId], references: [id])
+  reversedBy CustomerPayment? @relation("CustomerPaymentReversal")
+
+  @@index([invoiceId])
+  @@index([customerId])
+  @@index([branchId, paidAt])
+  @@index([receivedById])
+  @@map("customer_payments")
+}
+
+/// Debt waiver / adjustment (OWNER only, reason required). Positive amount reduces the balance.
+model InvoiceAdjustment {
+  id          String                @id @default(uuid(7)) @db.Uuid
+  invoiceId   String                @map("invoice_id") @db.Uuid
+  kind        InvoiceAdjustmentKind
+  amount      Decimal               @db.Decimal(14, 2)
+  reason      String
+  createdById String                @map("created_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+  createdBy User    @relation("AdjustmentCreatedBy", fields: [createdById], references: [id])
+
+  @@index([invoiceId])
+  @@index([createdById])
+  @@map("invoice_adjustments")
+}
+
+model TradeIn {
+  id               String        @id @default(uuid(7)) @db.Uuid
+  invoiceId        String        @map("invoice_id") @db.Uuid
+  customerId       String        @map("customer_id") @db.Uuid
+  branchId         String        @map("branch_id") @db.Uuid
+  /// Known catalogue product, if any.
+  productId        String?       @map("product_id") @db.Uuid
+  description      String
+  imei             String?
+  serialNumber     String?       @map("serial_number")
+  condition        UnitCondition
+  creditAmount     Decimal       @map("credit_amount") @db.Decimal(14, 2)
+  /// Set when the device was booked into stock as a TRADED_IN unit for later intake.
+  serializedUnitId String?       @unique @map("serialized_unit_id") @db.Uuid
+  assessedById     String        @map("assessed_by_id") @db.Uuid
+  notes            String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  invoice        Invoice         @relation(fields: [invoiceId], references: [id])
+  customer       Customer        @relation(fields: [customerId], references: [id])
+  branch         Branch          @relation(fields: [branchId], references: [id])
+  product        Product?        @relation(fields: [productId], references: [id])
+  serializedUnit SerializedUnit? @relation(fields: [serializedUnitId], references: [id])
+  assessedBy     User            @relation("TradeInAssessedBy", fields: [assessedById], references: [id])
+
+  @@index([invoiceId])
+  @@index([customerId])
+  @@index([branchId])
+  @@index([productId])
+  @@index([assessedById])
+  @@map("trade_ins")
+}
+
+/// creditAmount first reduces the invoice's open balance; refundAmount is the remainder paid back
+/// as a REFUND CustomerPayment row. A swap is a return with replacementInvoiceId set.
+model Return {
+  id                   String  @id @default(uuid(7)) @db.Uuid
+  /// e.g. RTN-LEK-000003 (sequence from the receiving branch).
+  number               String  @unique
+  invoiceId            String  @map("invoice_id") @db.Uuid
+  /// Branch that physically received the goods back.
+  branchId             String  @map("branch_id") @db.Uuid
+  customerId           String  @map("customer_id") @db.Uuid
+  reason               String
+  creditAmount         Decimal @map("credit_amount") @db.Decimal(14, 2)
+  refundAmount         Decimal @default(0) @map("refund_amount") @db.Decimal(14, 2)
+  replacementInvoiceId String? @unique @map("replacement_invoice_id") @db.Uuid
+  processedById        String  @map("processed_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  invoice            Invoice  @relation("ReturnOriginalInvoice", fields: [invoiceId], references: [id])
+  branch             Branch   @relation(fields: [branchId], references: [id])
+  customer           Customer @relation(fields: [customerId], references: [id])
+  replacementInvoice Invoice? @relation("ReturnReplacementInvoice", fields: [replacementInvoiceId], references: [id])
+  processedBy        User     @relation("ReturnProcessedBy", fields: [processedById], references: [id])
+
+  items ReturnItem[]
+
+  @@index([invoiceId])
+  @@index([branchId])
+  @@index([customerId])
+  @@index([processedById])
+  @@map("returns")
+}
+
+model ReturnItem {
+  id               String            @id @default(uuid(7)) @db.Uuid
+  returnId         String            @map("return_id") @db.Uuid
+  invoiceItemId    String            @map("invoice_item_id") @db.Uuid
+  serializedUnitId String?           @map("serialized_unit_id") @db.Uuid
+  quantity         Int
+  /// Credit value of this line (share of the invoice line incl. discount and VAT).
+  amount           Decimal           @db.Decimal(14, 2)
+  disposition      ReturnDisposition
+
+  return         Return          @relation(fields: [returnId], references: [id])
+  invoiceItem    InvoiceItem     @relation(fields: [invoiceItemId], references: [id])
+  serializedUnit SerializedUnit? @relation(fields: [serializedUnitId], references: [id])
+
+  @@index([returnId])
+  @@index([invoiceItemId])
+  @@index([serializedUnitId])
+  @@map("return_items")
+}
+
+/// One per sold serialized device. Public page: /w/[publicId] (no customer personal data).
+model WarrantyCard {
+  id               String         @id @default(uuid(7)) @db.Uuid
+  /// Short unguessable ID (base62), used in the public verification URL and QR code.
+  publicId         String         @unique @map("public_id")
+  invoiceItemId    String         @unique @map("invoice_item_id") @db.Uuid
+  serializedUnitId String         @map("serialized_unit_id") @db.Uuid
+  customerId       String         @map("customer_id") @db.Uuid
+  branchId         String         @map("branch_id") @db.Uuid
+  startsAt         DateTime       @map("starts_at") @db.Date
+  expiresAt        DateTime       @map("expires_at") @db.Date
+  terms            String
+  status           WarrantyStatus @default(ACTIVE)
+  voidedAt         DateTime?      @map("voided_at") @db.Timestamptz(3)
+  voidReason       String?        @map("void_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  invoiceItem    InvoiceItem    @relation(fields: [invoiceItemId], references: [id])
+  serializedUnit SerializedUnit @relation(fields: [serializedUnitId], references: [id])
+  customer       Customer       @relation(fields: [customerId], references: [id])
+  branch         Branch         @relation(fields: [branchId], references: [id])
+
+  @@index([serializedUnitId])
+  @@index([customerId])
+  @@index([branchId])
+  @@map("warranty_cards")
+}
+
+// ─── Messaging ───────────────────────────────────────────────────────────────
+
+model MessageTemplate {
+  id                       String  @id @default(uuid(7)) @db.Uuid
+  /// receipt | warranty_card | installment_due_3d | installment_due_today | installment_overdue_1d |
+  /// installment_overdue_7d | installment_overdue_14d | payment_confirmation | manual_reminder
+  key                      String  @unique
+  name                     String
+  /// WhatsApp body with {{variables}}.
+  body                     String
+  /// Shorter SMS body (links instead of attachments). Falls back to body when null.
+  smsBody                  String? @map("sms_body")
+  /// Name of the Meta-approved WhatsApp template used for business-initiated messages.
+  whatsappTemplateName     String? @map("whatsapp_template_name")
+  whatsappTemplateLanguage String  @default("en") @map("whatsapp_template_language")
+  isActive                 Boolean @default(true) @map("is_active")
+  updatedById              String? @map("updated_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  updatedBy User? @relation("TemplateUpdatedBy", fields: [updatedById], references: [id])
+
+  @@index([updatedById])
+  @@map("message_templates")
+}
+
+/// One row per send attempt chain on a channel. An SMS fallback is its own row with parentId set to
+/// the WhatsApp row it replaced, so the retry job can skip FAILED rows that already fell back.
+model NotificationLog {
+  id                String             @id @default(uuid(7)) @db.Uuid
+  customerId        String             @map("customer_id") @db.Uuid
+  invoiceId         String?            @map("invoice_id") @db.Uuid
+  templateKey       String             @map("template_key")
+  channel           MessageChannel
+  provider          String
+  to                String
+  body              String
+  mediaUrl          String?            @map("media_url")
+  status            NotificationStatus @default(QUEUED)
+  providerMessageId String?            @map("provider_message_id")
+  error             String?
+  attempts          Int                @default(0)
+  /// Automated: {templateKey}:{scheduleId}:{offset}. Makes cron re-runs send once (invariant 13).
+  dedupeKey         String             @unique @map("dedupe_key")
+  parentId          String?            @map("parent_id") @db.Uuid
+  /// Null when sent by an automated job.
+  triggeredById     String?            @map("triggered_by_id") @db.Uuid
+
+  lastAttemptAt DateTime? @map("last_attempt_at") @db.Timestamptz(3)
+  sentAt        DateTime? @map("sent_at") @db.Timestamptz(3)
+  deliveredAt   DateTime? @map("delivered_at") @db.Timestamptz(3)
+  failedAt      DateTime? @map("failed_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  customer    Customer          @relation(fields: [customerId], references: [id])
+  invoice     Invoice?          @relation(fields: [invoiceId], references: [id])
+  triggeredBy User?             @relation("NotificationTriggeredBy", fields: [triggeredById], references: [id])
+  parent      NotificationLog?  @relation("NotificationFallback", fields: [parentId], references: [id])
+  fallbacks   NotificationLog[] @relation("NotificationFallback")
+
+  @@index([customerId, createdAt])
+  @@index([invoiceId])
+  @@index([parentId])
+  @@index([triggeredById])
+  @@index([providerMessageId])
+  @@index([status, lastAttemptAt])
+  @@map("notification_logs")
+}
+
+// ─── Settings, alerts & audit ────────────────────────────────────────────────
+
+/// Key/value settings (VAT rate, installment approval rules, bank details, provider keys ...).
+/// Secret values (isSecret) are stored encrypted, editable by OWNER only, and never returned in full.
+model Setting {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  key         String  @unique
+  value       Json
+  isSecret    Boolean @default(false) @map("is_secret")
+  updatedById String? @map("updated_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  updatedBy User? @relation("SettingUpdatedBy", fields: [updatedById], references: [id])
+
+  @@index([updatedById])
+  @@map("settings")
+}
+
+/// Materialised by the daily stock-alerts job. One row per alert subject: the job re-opens a resolved
+/// row (resolvedAt = null) instead of inserting a duplicate. Open alerts have resolvedAt = null.
+model StockAlert {
+  id               String         @id @default(uuid(7)) @db.Uuid
+  type             StockAlertType
+  branchId         String         @map("branch_id") @db.Uuid
+  productId        String         @map("product_id") @db.Uuid
+  serializedUnitId String?        @map("serialized_unit_id") @db.Uuid
+  /// LOW_STOCK:{branchId}:{productId} or AGING:{serializedUnitId}.
+  dedupeKey        String         @unique @map("dedupe_key")
+  /// LOW_STOCK: available quantity when last detected. AGING: days in stock.
+  value            Int
+  threshold        Int
+  firstDetectedAt  DateTime       @map("first_detected_at") @db.Timestamptz(3)
+  lastDetectedAt   DateTime       @map("last_detected_at") @db.Timestamptz(3)
+  resolvedAt       DateTime?      @map("resolved_at") @db.Timestamptz(3)
+
+  branch         Branch          @relation(fields: [branchId], references: [id])
+  product        Product         @relation(fields: [productId], references: [id])
+  serializedUnit SerializedUnit? @relation(fields: [serializedUnitId], references: [id])
+
+  @@index([branchId, resolvedAt])
+  @@index([productId])
+  @@index([serializedUnitId])
+  @@map("stock_alerts")
+}
+
+/// Append-only. UPDATE / DELETE / TRUNCATE are rejected by a trigger (see init migration).
+model AuditLog {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  /// Null for automated jobs.
+  userId     String?  @map("user_id") @db.Uuid
+  branchId   String?  @map("branch_id") @db.Uuid
+  /// dot.case verb, e.g. invoice.create, transfer.ship, payment.reverse
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user   User?   @relation(fields: [userId], references: [id])
+  branch Branch? @relation(fields: [branchId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([branchId, createdAt])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
