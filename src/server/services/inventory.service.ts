@@ -308,13 +308,15 @@ export async function getUnitDetail(ctx: Ctx, unitId: string, now: Date = new Da
       meta: unit.tradeIn.branch.code,
     });
   }
+  const seesTransfers = can(ctx, "transfer.view");
   for (const item of unit.transferItems) {
     const t = item.transfer;
+    const transferHref = seesTransfers ? `/transfers/${t.id}` : undefined;
     if (t.shippedAt) {
-      events.push({ at: t.shippedAt.toISOString(), kind: "transfer_shipped", title: `Shipped on ${t.number}`, meta: `${t.fromBranch.code} → ${t.toBranch.code}` });
+      events.push({ at: t.shippedAt.toISOString(), kind: "transfer_shipped", title: `Shipped on ${t.number}`, meta: `${t.fromBranch.code} → ${t.toBranch.code}`, href: transferHref });
     }
     if (t.receivedAt) {
-      events.push({ at: t.receivedAt.toISOString(), kind: "transfer_received", title: `Received at ${t.toBranch.code}`, meta: t.number });
+      events.push({ at: t.receivedAt.toISOString(), kind: "transfer_received", title: `Received at ${t.toBranch.code}`, meta: t.number, href: transferHref });
     }
     if (t.cancelledAt) {
       events.push({ at: t.cancelledAt.toISOString(), kind: "transfer_cancelled", title: `Transfer ${t.number} cancelled`, meta: `Back at ${t.fromBranch.code}` });

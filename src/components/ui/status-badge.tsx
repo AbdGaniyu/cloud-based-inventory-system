@@ -1,4 +1,4 @@
-import type { PurchaseOrderStatus, UnitCondition, UnitStatus } from "@/generated/prisma/enums";
+import type { PurchaseOrderStatus, TransferStatus, UnitCondition, UnitStatus } from "@/generated/prisma/enums";
 import { cn } from "@/lib/utils";
 
 /** One label and one colour per status, everywhere (DESIGN.md §2.4). */
@@ -76,4 +76,16 @@ export function ConditionBadge({ condition }: { condition: UnitCondition }) {
       {CONDITION_LABELS[condition]}
     </span>
   );
+}
+
+const TRANSFER_STATUS: Record<TransferStatus, { label: string; tone: Tone }> = {
+  DRAFT: { label: "Draft", tone: "neutral" },
+  IN_TRANSIT: { label: "In Transit", tone: "info" },
+  RECEIVED: { label: "Received", tone: "success" },
+  CANCELLED: { label: "Cancelled", tone: "neutral" },
+};
+
+export function TransferStatusBadge({ status }: { status: TransferStatus }) {
+  const s = TRANSFER_STATUS[status];
+  return <Badge tone={s.tone}>{s.label}</Badge>;
 }

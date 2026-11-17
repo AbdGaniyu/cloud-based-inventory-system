@@ -3,7 +3,7 @@
 Multi-branch inventory, POS invoicing, credit ledger and automated customer messaging for a gadget retailer.
 Project rules live in [`CLAUDE.md`](./CLAUDE.md); visual rules in [`DESIGN.md`](./DESIGN.md).
 
-> Status: build steps 1–2 of 13 done (database + seed; auth, RBAC, branch context, app shell). Full setup docs land in step 13.
+> Status: build steps 1–4 of 13 done (database + seed; auth, RBAC, shell; inventory + stock intake; transfers + waybill). Full setup docs land in step 13.
 
 ## Local setup
 

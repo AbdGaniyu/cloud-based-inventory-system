@@ -17,3 +17,8 @@ export function normalizePhoneOrThrow(input: string, defaultCountry?: CountryCod
   if (!normalized) throw new RangeError(`Invalid phone number "${input}"`);
   return normalized;
 }
+
+/** "+2348025550104" → "+234 802 555 0104" for display; unparseable input is returned unchanged. */
+export function formatPhoneDisplay(e164: string): string {
+  return parsePhoneNumberFromString(e164)?.formatInternational() ?? e164;
+}
