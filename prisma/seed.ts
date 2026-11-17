@@ -82,14 +82,6 @@ const at = (n: number, hours = 11, minutes = 0): Date => storeInstant(daysAgo(n)
 
 const BRANCHES = [
   {
-    code: "MAIN",
-    name: "Main Branch",
-    type: "STORE",
-    address: "25 Broad Street, Lagos Island, Lagos",
-    phone: "0802 555 0101",
-    email: "main@gadgethub.test",
-  },
-  {
     // The main store (head office).
     code: "IKJ",
     name: "Ikeja",
@@ -97,14 +89,6 @@ const BRANCHES = [
     address: "5, Pepple Street, Computer Village, Ikeja",
     phone: "+234 905 870 6999",
     email: "info@leeplugshub.com",
-  },
-  {
-    code: "LEK",
-    name: "Lekki",
-    type: "STORE",
-    address: "Plot 9, Admiralty Way, Lekki Phase 1, Lagos",
-    phone: "0802 555 0103",
-    email: "lekki@gadgethub.test",
   },
   {
     code: "WH",
@@ -120,12 +104,12 @@ type BranchCode = (typeof BRANCHES)[number]["code"];
 
 const USERS: { key: string; name: string; email: string; role: Role; branch: BranchCode | null }[] = [
   { key: "owner", name: "Kemi Adebayo", email: "owner@gadgethub.test", role: "OWNER", branch: null },
-  { key: "manager.MAIN", name: "Emeka Obi", email: "manager.main@gadgethub.test", role: "BRANCH_MANAGER", branch: "MAIN" },
-  { key: "cashier.MAIN", name: "Ada Nwosu", email: "cashier.main@gadgethub.test", role: "CASHIER", branch: "MAIN" },
+  { key: "manager.MAIN", name: "Emeka Obi", email: "manager.main@gadgethub.test", role: "BRANCH_MANAGER", branch: "IKJ" },
+  { key: "cashier.MAIN", name: "Ada Nwosu", email: "cashier.main@gadgethub.test", role: "CASHIER", branch: "IKJ" },
   { key: "manager.IKJ", name: "Bola Hassan", email: "manager.ikj@gadgethub.test", role: "BRANCH_MANAGER", branch: "IKJ" },
   { key: "cashier.IKJ", name: "Femi Johnson", email: "cashier.ikj@gadgethub.test", role: "CASHIER", branch: "IKJ" },
-  { key: "manager.LEK", name: "Seyi Lawal", email: "manager.lek@gadgethub.test", role: "BRANCH_MANAGER", branch: "LEK" },
-  { key: "cashier.LEK", name: "Halima Bello", email: "cashier.lek@gadgethub.test", role: "CASHIER", branch: "LEK" },
+  { key: "manager.LEK", name: "Seyi Lawal", email: "manager.lek@gadgethub.test", role: "BRANCH_MANAGER", branch: "IKJ" },
+  { key: "cashier.LEK", name: "Halima Bello", email: "cashier.lek@gadgethub.test", role: "CASHIER", branch: "IKJ" },
 ];
 
 const PRODUCTS = {
@@ -1444,16 +1428,16 @@ async function main(): Promise<void> {
 
     // Completed transfer with an accessory discrepancy (5 earbuds shipped, 3 received).
     await once(
-      "Transfer received — Central Warehouse → Lekki (with discrepancy)",
+      "Transfer received — Central Warehouse → Ikeja (with discrepancy)",
       () => db.stockTransfer.findUnique({ where: { id: seedId("transfer:wh-lek") } }),
       () =>
         createTransfer(ctx, {
           key: "wh-lek",
           from: "WH",
-          to: "LEK",
+          to: "IKJ",
           createdDaysAgo: 76,
           shipped: { daysAgo: 75, by: owner },
-          received: { daysAgo: 74, by: ctx.user["manager.LEK"] },
+          received: { daysAgo: 74, by: ctx.user["manager.IKJ"] },
           approvedBy: owner,
           driverName: "Musa Garba",
           lines: [
@@ -1500,18 +1484,18 @@ async function main(): Promise<void> {
 
     // Instalment sale above the approval threshold, down payment + one repayment collected at another branch.
     await once(
-      "Active installment plan (manager-approved) — Tunde Bakare @ Lekki",
+      "Active installment plan (manager-approved) — Tunde Bakare @ Ikeja",
       () => db.invoice.findUnique({ where: { id: seedId("invoice:tunde-installment") } }),
       () =>
         createSale(ctx, {
           key: "tunde-installment",
-          branch: "LEK",
+          branch: "IKJ",
           customer: "tunde",
           cashier: ctx.user["cashier.LEK"],
           daysAgo: 35,
           lines: [{ unit: "wh-mba-1" }],
           discount: "50000",
-          payments: [{ kind: "DOWN_PAYMENT", amount: "731000.00", method: "POS_CARD", reference: "POS-LEK-301122" }],
+          payments: [{ kind: "DOWN_PAYMENT", amount: "731000.00", method: "POS_CARD", reference: "POS-IKJ-301122" }],
           plan: {
             downPayment: "731000.00",
             count: 4,
@@ -1523,7 +1507,7 @@ async function main(): Promise<void> {
             approvedBy: ctx.user["manager.LEK"],
           },
           repayments: [
-            { daysAgo: 6, amount: "274125.00", method: "CASH", branch: "MAIN", by: ctx.user["cashier.MAIN"] },
+            { daysAgo: 6, amount: "274125.00", method: "CASH", branch: "IKJ", by: ctx.user["cashier.MAIN"] },
           ],
         }),
       log,
@@ -1531,13 +1515,13 @@ async function main(): Promise<void> {
 
     // Net 30 with a partial payout; due in 10 days.
     await once(
-      "PO on Net 30 with partial payout — Lagos Tech → Main (20 days ago)",
+      "PO on Net 30 with partial payout — Lagos Tech → Ikeja (20 days ago)",
       () => db.purchaseOrder.findUnique({ where: { id: seedId("po:lagostech-main") } }),
       () =>
         createPurchaseOrder(ctx, {
           key: "lagostech-main",
           supplier: "lagosTech",
-          branch: "MAIN",
+          branch: "IKJ",
           terms: "NET_30",
           receivedDaysAgo: 20,
           dueDaysAfterReceipt: 30,
@@ -1593,17 +1577,17 @@ async function main(): Promise<void> {
 
     // In transit right now: one phone and 10 cables locked from sale.
     await once(
-      "Transfer in transit — Main → Lekki",
+      "Transfer in transit — Ikeja → Central Warehouse",
       () => db.stockTransfer.findUnique({ where: { id: seedId("transfer:main-lek") } }),
       () =>
         createTransfer(ctx, {
           key: "main-lek",
-          from: "MAIN",
-          to: "LEK",
+          from: "IKJ",
+          to: "WH",
           createdDaysAgo: 1,
-          shipped: { daysAgo: 1, by: ctx.user["manager.MAIN"] },
+          shipped: { daysAgo: 1, by: ctx.user["manager.IKJ"] },
           received: null,
-          approvedBy: ctx.user["manager.MAIN"],
+          approvedBy: ctx.user["manager.IKJ"],
           driverName: "Sunday Okon",
           lines: [{ unit: "main-s24u-1" }, { product: "cable", quantity: 10 }],
         }),

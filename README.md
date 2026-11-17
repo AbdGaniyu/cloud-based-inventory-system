@@ -51,14 +51,17 @@ All seeded users share one password: `SEED_PASSWORD` from `.env`, or **`GadgetHu
 | Email | Role | Branch |
 |---|---|---|
 | owner@gadgethub.test | Owner | All |
-| manager.main@gadgethub.test / cashier.main@gadgethub.test | Manager / Cashier | Main Branch |
 | manager.ikj@gadgethub.test / cashier.ikj@gadgethub.test | Manager / Cashier | Ikeja |
-| manager.lek@gadgethub.test / cashier.lek@gadgethub.test | Manager / Cashier | Lekki |
+| manager.main@gadgethub.test / cashier.main@gadgethub.test | Manager / Cashier | Ikeja |
+| manager.lek@gadgethub.test / cashier.lek@gadgethub.test | Manager / Cashier | Ikeja |
 
-The seed covers 4 branches, ~10 products, 25+ serialized units (some 60+ days old), accessories below
+The seed covers Ikeja (the main store) and the Central Warehouse, ~10 products, 25+ serialized units (some 60+ days old), accessories below
 reorder level, two suppliers with paid, part-paid and overdue purchase orders, five customers with a paid
 invoice, an active instalment plan and an overdue one, transfers in transit and received, and default
 message templates and settings.
+
+To close a branch later, use **Settings → Branches → Close…**: it moves the branch's stock, staff and
+open accounts to another store, cancels its live transfers and keeps its history.
 
 ## Environment variables
 

@@ -257,43 +257,51 @@ export async function cancelTransfer(ctx: Ctx, input: CancelTransferInput): Prom
   assertCanSee(ctx, transfer);
   assertCan(ctx, "transfer.cancel", { fromBranchId: transfer.fromBranchId });
   if (transfer.status !== "DRAFT" && transfer.status !== "IN_TRANSIT") throw wrongState(transfer.status, "cancelled");
+  await db.$transaction((tx) => cancelTransferWithin(tx, transfer.id, ctx.userId, input.reason), TX_OPTIONS);
+}
+
+/**
+ * Cancels a DRAFT or IN_TRANSIT transfer inside the caller's transaction, with its audit row.
+ * In-transit stock goes back to the source branch. Callers check permissions first.
+ */
+export async function cancelTransferWithin(tx: Prisma.TransactionClient, transferId: string, userId: string, reason: string): Promise<void> {
+  const transfer = await tx.stockTransfer.findUniqueOrThrow({ where: { id: transferId }, include: { items: true } });
+  if (transfer.status !== "DRAFT" && transfer.status !== "IN_TRANSIT") throw wrongState(transfer.status, "cancelled");
   const wasInTransit = transfer.status === "IN_TRANSIT";
   const unitIds = transfer.items.flatMap((i) => (i.serializedUnitId ? [i.serializedUnitId] : []));
 
-  await db.$transaction(async (tx) => {
-    const claimed = await tx.stockTransfer.updateMany({
-      where: { id: transfer.id, status: transfer.status },
-      data: { status: "CANCELLED", cancelledById: ctx.userId, cancelledAt: new Date(), cancelReason: input.reason },
-    });
-    if (claimed.count !== 1) throw new ConflictError("Someone else just updated this transfer. Refresh to see its status.");
+  const claimed = await tx.stockTransfer.updateMany({
+    where: { id: transfer.id, status: transfer.status },
+    data: { status: "CANCELLED", cancelledById: userId, cancelledAt: new Date(), cancelReason: reason },
+  });
+  if (claimed.count !== 1) throw new ConflictError("Someone else just updated this transfer. Refresh to see its status.");
 
-    if (wasInTransit) {
-      if (unitIds.length) {
-        const back = await tx.serializedUnit.updateMany({
-          where: { id: { in: unitIds }, branchId: transfer.fromBranchId, status: "IN_TRANSIT" },
-          data: { status: "IN_STOCK" },
-        });
-        if (back.count !== unitIds.length) throw new ConflictError("A device on this transfer is no longer in transit. Refresh and check the manifest.");
-      }
-      for (const item of transfer.items.filter((i) => !i.serializedUnitId)) {
-        const back = await tx.branchInventory.updateMany({
-          where: { productId: item.productId, branchId: transfer.fromBranchId, reservedQuantity: { gte: item.quantity } },
-          data: { reservedQuantity: { decrement: item.quantity }, quantity: { increment: item.quantity } },
-        });
-        if (back.count !== 1) throw new ConflictError("The source branch's in-transit stock doesn't match this transfer. Contact the owner.");
-      }
+  if (wasInTransit) {
+    if (unitIds.length) {
+      const back = await tx.serializedUnit.updateMany({
+        where: { id: { in: unitIds }, branchId: transfer.fromBranchId, status: "IN_TRANSIT" },
+        data: { status: "IN_STOCK" },
+      });
+      if (back.count !== unitIds.length) throw new ConflictError("A device on this transfer is no longer in transit. Refresh and check the manifest.");
     }
+    for (const item of transfer.items.filter((i) => !i.serializedUnitId)) {
+      const back = await tx.branchInventory.updateMany({
+        where: { productId: item.productId, branchId: transfer.fromBranchId, reservedQuantity: { gte: item.quantity } },
+        data: { reservedQuantity: { decrement: item.quantity }, quantity: { increment: item.quantity } },
+      });
+      if (back.count !== 1) throw new ConflictError("The source branch's in-transit stock doesn't match this transfer. Contact the owner.");
+    }
+  }
 
-    await writeAudit(tx, {
-      userId: ctx.userId,
-      branchId: transfer.fromBranchId,
-      action: "transfer.cancel",
-      entityType: "StockTransfer",
-      entityId: transfer.id,
-      before: { status: transfer.status },
-      after: { status: "CANCELLED", reason: input.reason, stockReturned: wasInTransit },
-    });
-  }, TX_OPTIONS);
+  await writeAudit(tx, {
+    userId,
+    branchId: transfer.fromBranchId,
+    action: "transfer.cancel",
+    entityType: "StockTransfer",
+    entityId: transfer.id,
+    before: { status: transfer.status },
+    after: { status: "CANCELLED", reason, stockReturned: wasInTransit },
+  });
 }
 
 // ─── Read ────────────────────────────────────────────────────────────────────

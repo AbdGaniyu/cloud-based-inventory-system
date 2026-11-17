@@ -18,7 +18,18 @@ import {
 import { type ActionResult, runAction } from "@/server/action-result";
 import { requireActionSession } from "@/server/auth/session";
 import { parseInput } from "@/server/parse-input";
-import { createBranch, createUser, resetUserPassword, updateBranch, updateBusinessSettings, updateUser } from "@/server/services/admin.service";
+import {
+  type BranchClosurePreview,
+  type BranchClosureResult,
+  closeBranchInto,
+  createBranch,
+  createUser,
+  previewBranchClosure,
+  resetUserPassword,
+  updateBranch,
+  updateBusinessSettings,
+  updateUser,
+} from "@/server/services/admin.service";
 import { clearProviderSecret, saveProviderSecret, sendTestMessage, setProviderChoice, updateTemplate } from "@/server/services/messaging-settings.service";
 
 const done = () => revalidatePath("/settings");
@@ -104,4 +115,16 @@ export async function clearSecret(name: unknown): Promise<ActionResult<null>> {
 
 export async function sendTest(input: unknown): Promise<ActionResult<{ provider: string; providerMessageId: string }>> {
   return runAction(async () => sendTestMessage(await requireActionSession(), parseInput(testMessageSchema, input)));
+}
+
+export async function loadBranchClosure(branchId: unknown): Promise<ActionResult<BranchClosurePreview>> {
+  return runAction(async () => previewBranchClosure(await requireActionSession(), parseInput(z.guid(), branchId)));
+}
+
+export async function closeBranch(input: unknown): Promise<ActionResult<BranchClosureResult>> {
+  return runAction(async () => {
+    const result = await closeBranchInto(await requireActionSession(), parseInput(z.object({ branchId: z.guid(), targetBranchId: z.guid() }), input));
+    revalidatePath("/", "layout");
+    return result;
+  });
 }

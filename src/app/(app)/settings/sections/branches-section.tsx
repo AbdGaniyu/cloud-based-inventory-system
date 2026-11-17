@@ -4,6 +4,7 @@ import { Loader2, Plus } from "lucide-react";
 import { useState } from "react";
 
 import { addBranch, editBranch } from "@/app/(app)/settings/actions";
+import { CloseBranchDialog } from "@/app/(app)/settings/sections/close-branch-dialog";
 import { LabeledField, useSave } from "@/app/(app)/settings/sections/form-bits";
 import { Segmented } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
@@ -84,6 +85,7 @@ function BranchDialog({ draft, onClose }: { draft: Draft; onClose: () => void })
 
 export function BranchesSection({ branches }: { branches: AdminBranch[] }) {
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [closing, setClosing] = useState<string | null>(null);
   return (
     <section aria-labelledby="branches-heading" className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -121,7 +123,12 @@ export function BranchesSection({ branches }: { branches: AdminBranch[] }) {
                 <td className="px-3 text-right tabular-nums">{b.devicesInStock}</td>
                 <td className="px-3 text-right tabular-nums">{b.invoices}</td>
                 <td className="px-3">{b.isActive ? <Badge tone="success">Open</Badge> : <Badge tone="neutral">Closed</Badge>}</td>
-                <td className="px-3 text-right">
+                <td className="px-3 text-right whitespace-nowrap">
+                  {b.isActive && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setClosing(b.id)} aria-label={`Close ${b.name}`}>
+                      Close…
+                    </Button>
+                  )}
                   <Button type="button" variant="ghost" size="sm" onClick={() => setDraft({ id: b.id, name: b.name, code: b.code, type: b.type, address: b.address, phone: b.phone, email: b.email ?? "", isActive: b.isActive })}>
                     Edit
                   </Button>
@@ -132,6 +139,7 @@ export function BranchesSection({ branches }: { branches: AdminBranch[] }) {
         </table>
       </div>
       {draft && <BranchDialog draft={draft} onClose={() => setDraft(null)} />}
+      {closing && <CloseBranchDialog branchId={closing} onClose={() => setClosing(null)} />}
     </section>
   );
 }

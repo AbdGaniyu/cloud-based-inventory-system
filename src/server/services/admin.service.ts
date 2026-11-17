@@ -12,6 +12,7 @@ import { assertCan, type Ctx } from "@/server/auth/permissions";
 import { db } from "@/server/db";
 import { ConflictError, NotFoundError, ValidationError } from "@/server/errors";
 import { writeAudit } from "@/server/services/audit.service";
+import { cancelTransferWithin } from "@/server/services/transfer.service";
 import { getSetting } from "@/server/services/settings.service";
 
 /**
@@ -235,4 +236,126 @@ export async function resetUserPassword(ctx: Ctx, input: { id: string; password:
     await tx.authThrottle.deleteMany({ where: { key: { in: [`login:email:${user.email}`, `approve:email:${user.email}`] } } });
     await writeAudit(tx, { userId: ctx.userId, branchId: user.branchId, action: "user.resetPassword", entityType: "User", entityId: input.id, after: { passwordChanged: true } });
   });
+}
+
+// ─── Closing a branch ──────────────────────────────────────────────────────
+
+export type BranchClosurePreview = {
+  branch: { id: string; code: string; name: string };
+  targets: { id: string; code: string; name: string }[];
+  devices: number;
+  accessoryQuantity: number;
+  staff: { id: string; name: string }[];
+  openInvoices: { number: string; balance: string }[];
+  openPurchaseOrders: { number: string; owed: string }[];
+  transfersToCancel: { number: string; status: string }[];
+};
+
+const OPEN_INVOICE = { balance: { gt: 0 }, status: { notIn: ["VOID", "RETURNED"] } } satisfies Prisma.InvoiceWhereInput;
+const LIVE_TRANSFER = { status: { in: ["DRAFT", "IN_TRANSIT"] } } satisfies Prisma.StockTransferWhereInput;
+
+/** What closing a branch will move or cancel, for the confirmation dialog. */
+export async function previewBranchClosure(ctx: Ctx, branchId: string): Promise<BranchClosurePreview> {
+  assertCan(ctx, "branch.manage");
+  const branch = await db.branch.findUnique({ where: { id: branchId }, select: { id: true, code: true, name: true, isActive: true } });
+  if (!branch?.isActive) throw new NotFoundError("That branch is not open.");
+  const [targets, devices, accessories, staff, invoices, orders, transfers] = await Promise.all([
+    db.branch.findMany({ where: { isActive: true, type: "STORE", id: { not: branchId } }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
+    db.serializedUnit.count({ where: { branchId, status: { not: "SOLD" } } }),
+    db.branchInventory.aggregate({ where: { branchId }, _sum: { quantity: true, reservedQuantity: true } }),
+    db.user.findMany({ where: { branchId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.invoice.findMany({ where: { branchId, ...OPEN_INVOICE }, select: { number: true, balance: true }, orderBy: { number: "asc" } }),
+    db.purchaseOrder.findMany({ where: { branchId, status: { not: "PAID" } }, select: { number: true, totalCost: true, amountPaid: true }, orderBy: { number: "asc" } }),
+    db.stockTransfer.findMany({ where: { OR: [{ fromBranchId: branchId }, { toBranchId: branchId }], ...LIVE_TRANSFER }, select: { number: true, status: true }, orderBy: { number: "asc" } }),
+  ]);
+  return {
+    branch: { id: branch.id, code: branch.code, name: branch.name },
+    targets,
+    devices,
+    accessoryQuantity: (accessories._sum.quantity ?? 0) + (accessories._sum.reservedQuantity ?? 0),
+    staff,
+    openInvoices: invoices.map((i) => ({ number: i.number, balance: i.balance.toFixed(2) })),
+    openPurchaseOrders: orders.map((o) => ({ number: o.number, owed: o.totalCost.minus(o.amountPaid).toFixed(2) })),
+    transfersToCancel: transfers.map((t) => ({ number: t.number, status: t.status })),
+  };
+}
+
+export type BranchClosureResult = {
+  devicesMoved: number;
+  accessoriesMoved: number;
+  staffMoved: number;
+  invoicesMoved: string[];
+  purchaseOrdersMoved: string[];
+  transfersCancelled: string[];
+};
+
+/**
+ * Closes a branch and moves what it holds into another open store, in one transaction with one
+ * audit row: live transfers in or out are cancelled (in-transit stock returns to its source),
+ * unsold devices, accessory quantities and staff move, and open customer and supplier accounts move
+ * so they can still be collected and paid. History (sales, payments, returns, received transfers)
+ * stays with the branch where it happened, and document numbers never change.
+ */
+export async function closeBranchInto(ctx: Ctx, input: { branchId: string; targetBranchId: string }): Promise<BranchClosureResult> {
+  assertCan(ctx, "branch.manage");
+  if (input.branchId === input.targetBranchId) throw new ValidationError("Choose a different branch to move everything to.");
+  const [source, target] = await Promise.all([
+    db.branch.findUnique({ where: { id: input.branchId }, select: { id: true, code: true, name: true, isActive: true } }),
+    db.branch.findUnique({ where: { id: input.targetBranchId }, select: { id: true, code: true, name: true, isActive: true, type: true } }),
+  ]);
+  if (!source?.isActive) throw new NotFoundError("That branch is not open.");
+  if (!target?.isActive || target.type !== "STORE") throw new ValidationError("Move everything to an open store.");
+  const reason = `${source.name} closed; stock moved to ${target.name}`;
+
+  return db.$transaction(
+    async (tx) => {
+      const transfers = await tx.stockTransfer.findMany({ where: { OR: [{ fromBranchId: source.id }, { toBranchId: source.id }], ...LIVE_TRANSFER }, select: { id: true, number: true } });
+      for (const t of transfers) await cancelTransferWithin(tx, t.id, ctx.userId, reason);
+
+      const stuck = await tx.serializedUnit.count({ where: { branchId: source.id, status: "IN_TRANSIT" } });
+      if (stuck > 0) throw new ConflictError(`${stuck} device(s) at ${source.name} are still marked in transit. Check the transfers list.`);
+      const devices = await tx.serializedUnit.updateMany({ where: { branchId: source.id, status: { not: "SOLD" } }, data: { branchId: target.id } });
+
+      const shelves = await tx.branchInventory.findMany({ where: { branchId: source.id, OR: [{ quantity: { gt: 0 } }, { reservedQuantity: { gt: 0 } }] } });
+      let accessoriesMoved = 0;
+      for (const row of shelves) {
+        if (row.reservedQuantity > 0) throw new ConflictError(`${source.name} still has accessories reserved for a transfer. Check the transfers list.`);
+        await tx.branchInventory.upsert({
+          where: { productId_branchId: { productId: row.productId, branchId: target.id } },
+          create: { productId: row.productId, branchId: target.id, quantity: row.quantity },
+          update: { quantity: { increment: row.quantity } },
+        });
+        await tx.branchInventory.update({ where: { id: row.id }, data: { quantity: 0 } });
+        accessoriesMoved += row.quantity;
+      }
+
+      const staff = await tx.user.updateMany({ where: { branchId: source.id }, data: { branchId: target.id } });
+      const invoices = await tx.invoice.findMany({ where: { branchId: source.id, ...OPEN_INVOICE }, select: { id: true, number: true } });
+      await tx.invoice.updateMany({ where: { id: { in: invoices.map((i) => i.id) } }, data: { branchId: target.id } });
+      const orders = await tx.purchaseOrder.findMany({ where: { branchId: source.id, status: { not: "PAID" } }, select: { id: true, number: true } });
+      await tx.purchaseOrder.updateMany({ where: { id: { in: orders.map((o) => o.id) } }, data: { branchId: target.id } });
+      await tx.stockAlert.updateMany({ where: { branchId: source.id, resolvedAt: null }, data: { resolvedAt: new Date() } });
+      await tx.branch.update({ where: { id: source.id }, data: { isActive: false } });
+
+      const result: BranchClosureResult = {
+        devicesMoved: devices.count,
+        accessoriesMoved,
+        staffMoved: staff.count,
+        invoicesMoved: invoices.map((i) => i.number),
+        purchaseOrdersMoved: orders.map((o) => o.number),
+        transfersCancelled: transfers.map((t) => t.number),
+      };
+      await writeAudit(tx, {
+        userId: ctx.userId,
+        branchId: source.id,
+        action: "branch.close",
+        entityType: "Branch",
+        entityId: source.id,
+        before: { code: source.code, isActive: true },
+        after: { isActive: false, movedTo: target.code, ...result },
+      });
+      return result;
+    },
+    { timeout: 30_000 },
+  );
 }
