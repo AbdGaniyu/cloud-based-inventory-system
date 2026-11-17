@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/empty-state";
 import { IdentifierChip } from "@/components/identifier-chip";
 import { RecordPaymentSheet } from "@/components/ledger/record-payment-sheet";
 import { Money } from "@/components/money";
+import { PaidGauge } from "@/components/paid-gauge";
 import { CHANNEL_LABEL } from "@/components/notifications/use-messages";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -23,39 +24,9 @@ import type { ReceivableRow } from "@/server/services/ledger.service";
 
 const calendar = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 const cal = (d: string) => calendar.format(new Date(`${d}T00:00:00Z`));
-const GAUGE_TICKS = 12;
-/** Server and browser Math.sin differ in the last digit; rounding keeps hydration identical. */
-const px = (n: number) => Math.round(n * 100) / 100;
-
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? (parts.at(-1)?.[0] ?? "") : "")).toUpperCase();
-}
-
-/** Half-ring of ticks filled to the paid share (mockup): green when paid, amber from half, red below. */
-function PaidGauge({ percent }: { percent: number }) {
-  const filled = Math.round((percent / 100) * GAUGE_TICKS);
-  const tone = percent >= 100 ? "var(--success)" : percent >= 50 ? "var(--warning)" : "var(--danger)";
-  return (
-    <svg viewBox="0 0 64 36" className="h-9 w-16 shrink-0" aria-hidden>
-      {Array.from({ length: GAUGE_TICKS }, (_, i) => {
-        const angle = Math.PI - (i / (GAUGE_TICKS - 1)) * Math.PI;
-        const [cx, cy, r1, r2] = [32, 32, 20, 28];
-        return (
-          <line
-            key={i}
-            x1={px(cx + r1 * Math.cos(angle))}
-            y1={px(cy - r1 * Math.sin(angle))}
-            x2={px(cx + r2 * Math.cos(angle))}
-            y2={px(cy - r2 * Math.sin(angle))}
-            stroke={i < filled ? tone : "var(--border)"}
-            strokeWidth={2.5}
-            strokeLinecap="round"
-          />
-        );
-      })}
-    </svg>
-  );
 }
 
 function DueText({ row }: { row: ReceivableRow }) {

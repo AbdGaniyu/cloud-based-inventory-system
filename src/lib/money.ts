@@ -86,3 +86,12 @@ export function formatMoney(value: MoneyInput, options: { symbol?: boolean } = {
   const exact = round2(value).toFixed(STORE.currencyDecimals) as Intl.StringNumericLiteral;
   return options.symbol === false ? plainFormatter.format(exact) : currencyFormatter.format(exact);
 }
+
+const compactFormatter = new Intl.NumberFormat("en-NG", { notation: "compact", maximumFractionDigits: 1 });
+
+/** "₦13.3M" for headline figures; pair with the exact value in a title or tooltip. */
+export function formatMoneyCompact(value: MoneyInput): string {
+  const exact = round2(value);
+  const sign = exact.lt(0) ? "−" : "";
+  return `${sign}${STORE.currencySymbol}${compactFormatter.format(exact.abs().toFixed(2) as Intl.StringNumericLiteral)}`;
+}

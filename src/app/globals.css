@@ -55,6 +55,11 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-aging-1: var(--aging-1);
+  --color-aging-2: var(--aging-2);
+  --color-aging-3: var(--aging-3);
+  --color-aging-4: var(--aging-4);
+  --color-aging-5: var(--aging-5);
 
   --color-secondary-hover: var(--secondary-hover);
   --color-badge: var(--badge);
@@ -162,6 +167,12 @@
   --chart-3: #15803d;
   --chart-4: #b45309;
   --chart-5: #b91c1c;
+  /* Aging severity, not yet due → 30+ days (mockup: overview). */
+  --aging-1: #18181b;
+  --aging-2: #f2d675;
+  --aging-3: #c56b23;
+  --aging-4: #efa3a3;
+  --aging-5: #b91c1c;
 
 
   --radius: 8px;
@@ -216,6 +227,11 @@
   --chart-4: #fbbf24;
   --chart-5: #f87171;
 
+  --aging-1: #e4e4e7;
+  --aging-2: #d4b23f;
+  --aging-3: #dd8a3e;
+  --aging-4: #e58a8a;
+  --aging-5: #ef4444;
 }
 
 @layer base {
