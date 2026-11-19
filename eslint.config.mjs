@@ -10,6 +10,11 @@ const eslintConfig = defineConfig([
     files: ["src/server/pdf/**/*.tsx"],
     rules: { "jsx-a11y/alt-text": "off" },
   },
+  {
+    // Passenger (cPanel "Setup Node.js App") loads the startup file with require(), so it stays CommonJS.
+    files: ["server.cjs"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

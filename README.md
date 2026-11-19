@@ -8,6 +8,9 @@ reminders go out over WhatsApp with SMS fallback.
 Project rules live in [`CLAUDE.md`](./CLAUDE.md); visual rules in [`DESIGN.md`](./DESIGN.md) and the
 mockups in `docs/design/mockups/`.
 
+
+> **Full documentation** (architecture, installation on your computer, Vercel, a VPS or cPanel shared
+> hosting, configuration, operations, troubleshooting): [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md).
 ## What it does
 
 | Area | Screens |
