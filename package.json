@@ -20,10 +20,13 @@
     "user:create-owner": "tsx --env-file-if-exists=.env scripts/create-owner.ts",
     "db:grant-app": "tsx --env-file-if-exists=.env scripts/db-grant-app-role.ts",
     "db:verify": "tsx --env-file-if-exists=.env scripts/verify-ledger.ts",
+    "db:migrate:https": "tsx --env-file-if-exists=.env scripts/migrate-over-https.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
     "@hookform/resolvers": "^7.0.6",
+    "@neondatabase/serverless": "^1.2.1",
+    "@prisma/adapter-neon": "^7.10.1",
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
     "@react-pdf/renderer": "^4.9.0",

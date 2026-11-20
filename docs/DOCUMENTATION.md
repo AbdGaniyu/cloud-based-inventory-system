@@ -505,6 +505,14 @@ The connection string is `postgresql://cpuser_owner:PASSWORD@localhost:5432/cpus
 
 **Option 2: external database** (more reliable, with backups included). Create a Neon or Supabase database and use its connection string with `?sslmode=require`.
 
+> **If the host blocks outbound port 5432** (Namecheap shared hosting does; test with
+> `timeout 6 bash -c "</dev/tcp/<db-host>/5432" && echo open`), use Neon and set `DB_DRIVER=neon` in `.env`.
+> The app then talks to Neon over WebSockets on port 443. Create and update the tables with
+> `pnpm db:migrate:https` instead of `prisma migrate deploy`; it records them in `_prisma_migrations` the same way.
+> If the server also can't build (old glibc or a 1 GB memory limit), run the **Release build** workflow in GitHub
+> Actions and download its `next-build.tgz` into the app root instead of running `pnpm build` (see
+> `.github/workflows/release-build.yml`).
+
 **The restricted login (section 13):** cPanel doesn't let you create roles from SQL.
 - Create a **second** user in cPanel, for example `cpuser_app`, and add it to the database with ALL PRIVILEGES.
 - Then run `pnpm db:grant-app` with `APP_DB_ROLE=cpuser_app` (step 9.4). It tries to set that role's password, which a non-superuser can't do on some hosts.

@@ -1,9 +1,26 @@
+import { neonConfig } from "@neondatabase/serverless";
+import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "@/generated/prisma/client";
 
+/**
+ * Which driver talks to PostgreSQL:
+ * - `pg` (default): plain TCP on port 5432.
+ * - `neon`: Neon's serverless driver over WebSockets on port 443, for hosts whose firewall blocks
+ *   outbound 5432 (e.g. Namecheap shared hosting). Only works with a Neon database.
+ */
+export function databaseDriver(): "pg" | "neon" {
+  return process.env.DB_DRIVER === "neon" ? "neon" : "pg";
+}
+
 export function createPrismaClient(connectionString = process.env.DATABASE_URL): PrismaClient {
   if (!connectionString) throw new Error("DATABASE_URL is not set");
+  if (databaseDriver() === "neon") {
+    // Node 22+ has a global WebSocket; the Neon driver needs to be told to use it.
+    neonConfig.webSocketConstructor ??= globalThis.WebSocket;
+    return new PrismaClient({ adapter: new PrismaNeon({ connectionString }) });
+  }
   return new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 }
 
