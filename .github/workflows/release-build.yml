@@ -1,0 +1,81 @@
+# Builds the production `.next` folder for hosts that can't build it themselves (e.g. cPanel shared
+# hosting with an old glibc or a 1 GB memory limit) and publishes it as a release asset.
+# The server keeps its own node_modules (installed from the same pnpm-lock.yaml) and .env, then runs:
+#   curl -L -o next-build.tgz https://github.com/<owner>/<repo>/releases/download/build-latest/next-build.tgz
+#   rm -rf .next && tar xzf next-build.tgz
+# Run it from the Actions tab ("Release build" → Run workflow) after pushing changes.
+name: Release build
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: "Public https URL of the app (sets the security headers baked into the build)"
+        required: true
+        default: "https://leeplugslogin.com.ng"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-build
+  cancel-in-progress: true
+
+env:
+  # Build-time placeholders only; the server's .env supplies the real values at runtime.
+  DATABASE_URL: postgresql://gadgethub:gadgethub@localhost:5432/gadgethub?schema=public
+  AUTH_SECRET: build-auth-secret-not-for-production-000000000
+  CRON_SECRET: build-cron-secret-not-for-production-00000000
+  DOCUMENT_SIGNING_SECRET: build-signing-secret-not-for-production-00
+  APP_URL: ${{ inputs.app_url }}
+  WHATSAPP_PROVIDER: console
+  SMS_PROVIDER: console
+  NEXT_TELEMETRY_DISABLED: "1"
+  TZ: UTC
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: gadgethub
+          POSTGRES_PASSWORD: gadgethub
+          POSTGRES_DB: gadgethub
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U gadgethub -d gadgethub"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma migrate deploy
+      - run: pnpm build
+
+      - name: Package .next
+        run: |
+          rm -rf .next/cache
+          echo "${GITHUB_SHA}" > .next/BUILD_COMMIT
+          tar czf next-build.tgz .next
+
+      - name: Publish as the build-latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete build-latest --yes --cleanup-tag || true
+          gh release create build-latest next-build.tgz \
+            --title "Latest production build" \
+            --notes "Built from ${GITHUB_SHA} for ${APP_URL}. Download and extract in the app root on the server." \
+            --prerelease
