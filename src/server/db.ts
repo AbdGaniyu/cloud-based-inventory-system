@@ -19,7 +19,16 @@ export function createPrismaClient(connectionString = process.env.DATABASE_URL):
   if (databaseDriver() === "neon") {
     // Node 22+ has a global WebSocket; the Neon driver needs to be told to use it.
     neonConfig.webSocketConstructor ??= globalThis.WebSocket;
-    return new PrismaClient({ adapter: new PrismaNeon({ connectionString }) });
+    return new PrismaClient({
+      adapter: new PrismaNeon({
+        connectionString,
+        // Neon suspends an idle compute and its pooler drops idle sockets; a pooled WebSocket kept past
+        // that fails the next query with a bare ErrorEvent. Close idle sockets well before then.
+        idleTimeoutMillis: 10_000,
+        connectionTimeoutMillis: 15_000,
+        max: 5,
+      }),
+    });
   }
   return new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 }
