@@ -6,7 +6,6 @@ import bcrypt from "bcryptjs";
 
 import { createPrismaClient } from "@/server/db";
 import { writeAudit } from "@/server/services/audit.service";
-import { throttleKeysForAccount } from "@/server/services/throttle.service";
 
 /**
  * Last resort for someone who forgot their password when no other owner can reset it in
@@ -19,6 +18,11 @@ import { throttleKeysForAccount } from "@/server/services/throttle.service";
  * person out everywhere, lifts any sign-in lockout and writes an audit row. Two-factor stays on.
  */
 const BCRYPT_COST = 12;
+
+/** Same keys as throttleKeysForAccount() in throttle.service.ts, which is server-only and can't load here. */
+function throttleKeysForAccount(email: string): { startsWith: string }[] {
+  return ["login", "approve", "reauth"].flatMap((scope) => [{ startsWith: `${scope}:pair:${email}|` }, { startsWith: `${scope}:email:${email}` }]);
+}
 
 async function main(): Promise<void> {
   const email = process.argv[2]?.trim().toLowerCase();
