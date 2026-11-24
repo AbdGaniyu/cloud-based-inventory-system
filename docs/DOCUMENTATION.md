@@ -788,6 +788,7 @@ Migrations only ever add to the database. If a release goes wrong, deploy the pr
 | Sign-in shows "Too many attempts" | The lockout lasts 15 minutes. An owner's password reset for that user clears it at once. |
 | Lost two-factor phone (staff) | Owner: **Settings → Users** → *Reset two-factor* (shield icon). |
 | Lost two-factor phone (the only owner, no recovery codes) | On the server: `pnpm user:reset-2fa owner@email`. |
+| Forgot password (the only owner, or no owner to reset it) | On the server: `pnpm user:reset-password owner@email` prints a one-time password. |
 | Customers report "This link has expired" | Links in messages last 30 days. Open the invoice and **resend** the receipt to get a fresh link. |
 | Log line `rate limit skipped: client IP unknown` | Set `TRUSTED_PROXY_COUNT` or `CLIENT_IP_HEADER` for your proxy setup (section 5). |
 | `/api/health` says `"degraded"` | A scheduled job is late or failing. **Settings → System** shows which one; check the cron set-up (section 11). |
@@ -817,6 +818,7 @@ Migrations only ever add to the database. If a release goes wrong, deploy the pr
 | `pnpm cron:local [--run all\|<job>]` | Run the scheduled jobs against the dev server |
 | `pnpm user:create-owner "Name" email` | First owner on a new store (one-time password) |
 | `pnpm user:reset-2fa email` | Last-resort two-factor reset from the server |
+| `pnpm user:reset-password email` | Last-resort password reset from the server (prints a one-time password) |
 | `scripts/backup.sh [dir]` | Off-site backup (`pg_dump` + checksum) |
 | `scripts/restore-drill.sh file.dump` | Restore into a scratch database and verify |
 

@@ -103,6 +103,7 @@ open accounts to another store, cancels its live transfers and keeps its history
 | `pnpm db:grant-app` | Create/refresh the app's least-privilege database login (after each migration) |
 | `pnpm db:verify [url]` | Ledger, stock, numbering and safeguard checks (also run daily by the 07:00 job) |
 | `scripts/backup.sh`, `scripts/restore-drill.sh` | Off-site backup; monthly restore drill with integrity checks |
+| `pnpm user:reset-password <email>` | Last resort: give someone a one-time password from the server (e.g. the only owner forgot theirs) |
 | `pnpm user:reset-2fa <email>` | Last resort: turn off someone's two-factor from the server (e.g. the only owner lost their phone and codes) |
 
 A change is done when `pnpm lint && pnpm typecheck && pnpm test` pass.
